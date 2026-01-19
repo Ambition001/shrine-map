@@ -5,13 +5,13 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, TwitterAuthProvider } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: "***REMOVED***",
-  authDomain: "***REMOVED***",
-  projectId: "***REMOVED***",
-  storageBucket: "***REMOVED***.firebasestorage.app",
-  messagingSenderId: "***REMOVED***",
-  appId: "1:***REMOVED***:web:01688ba044b928ad07073a",
-  measurementId: "***REMOVED***"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
 // 初始化 Firebase
