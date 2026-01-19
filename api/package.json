@@ -1,0 +1,13 @@
+{
+  "name": "shrine-map-api",
+  "version": "1.0.0",
+  "description": "Azure Functions API for Shrine Map",
+  "scripts": {
+    "start": "func start",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.0.0",
+    "firebase-admin": "^13.6.0"
+  }
+}
