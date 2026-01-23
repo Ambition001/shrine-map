@@ -3,7 +3,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MapPin, Check, X, List, Map, LogIn, LogOut, User, ExternalLink } from 'lucide-react';
 import shrineData from './data/shrines.json';
-import { getVisits, toggleVisit, mergeLocalToCloud, getLocalVisitsCount } from './services/visits';
+import { getVisits, toggleVisitOptimistic, initLocalStorage, smartMerge, mergeAll, clearLocalStorage, replaceCloudWithLocal, syncPendingOperations, clearPendingQueue } from './services/visits';
 import { onAuthChange, loginWithGoogle, loginWithTwitter, logout as firebaseLogout } from './services/auth';
 
 // Mapbox token from environment variable
@@ -87,6 +87,29 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
     };
   }, [shrines]);
 
+  // 初始化 IndexedDB（应用启动时）
+  useEffect(() => {
+    const init = async () => {
+      const result = await initLocalStorage();
+      if (result.migrated) {
+        console.log(`已从 localStorage 迁移 ${result.count} 条记录到 IndexedDB`);
+      }
+      // 触发一次后台同步，处理之前未完成的操作
+      syncPendingOperations();
+    };
+    init();
+  }, []);
+
+  // 监听网络恢复，自动重试同步
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('网络恢复，开始同步...');
+      syncPendingOperations();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
   // 监听认证状态
   useEffect(() => {
     let previousUser = null;
@@ -98,13 +121,52 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
       setUser(currentUser);
       setAuthLoading(false);
 
-      // 用户刚登录时，检查是否有本地数据需要处理
+      // 用户刚登录时，使用智能合并
       if (isNewLogin) {
-        const localCount = getLocalVisitsCount();
-        if (localCount > 0) {
-          // 显示确认对话框
-          setMergeDialog({ localCount });
+        const mergeResult = await smartMerge();
+
+        switch (mergeResult.action) {
+          case 'use_cloud':
+            // 静默使用云端数据，无需提示
+            break;
+
+          case 'use_local':
+            // 云端 API 出错，使用本地数据（静默处理）
+            console.warn('云端 API 不可用，使用本地数据');
+            break;
+
+          case 'pending_synced':
+            // 待同步操作已完成，显示提示
+            if (mergeResult.count > 0) {
+              setSyncMessage(`${mergeResult.count}件の記録を同期しました`);
+              setTimeout(() => setSyncMessage(null), 2000);
+            }
+            break;
+
+          case 'uploaded_local':
+            // 自动上传成功，显示简短提示
+            setSyncMessage(`${mergeResult.count}件の記録を同期しました`);
+            setTimeout(() => setSyncMessage(null), 2000);
+            break;
+
+          case 'ask_user':
+            // 只有真正冲突时才弹窗
+            setMergeDialog({
+              type: 'conflict',
+              onlyLocalCount: mergeResult.conflict.onlyLocal.length,
+              onlyCloudCount: mergeResult.conflict.onlyCloud.length,
+              commonCount: mergeResult.conflict.common.length,
+              onlyCloud: mergeResult.conflict.onlyCloud // 保存云端独有的ID，用于"本地优先"时删除
+            });
+            break;
+
+          default:
+            break;
         }
+
+        // 重新加载数据
+        const visits = await getVisits();
+        setVisitedShrines(visits);
       }
     });
     return () => unsubscribe();
@@ -287,13 +349,26 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
     }
   }, [mapLoaded, visitedShrines, generateGeoJSON]);
 
-  // 切换参拜状态
+  // 切换参拜状态（乐观更新：先更新 UI，再写入本地/同步云端）
   const toggleVisited = async (shrineId) => {
+    // 1. 立即计算新状态
+    const newVisited = new Set(visitedShrines);
+    if (newVisited.has(shrineId)) {
+      newVisited.delete(shrineId);
+    } else {
+      newVisited.add(shrineId);
+    }
+
+    // 2. 立即更新 UI（乐观更新）
+    setVisitedShrines(newVisited);
+
+    // 3. 后台写入本地存储并同步云端（不阻塞 UI）
     try {
-      const newVisited = await toggleVisit(shrineId, visitedShrines);
-      setVisitedShrines(newVisited);
+      await toggleVisitOptimistic(shrineId, visitedShrines);
     } catch (error) {
       console.error('切换参拜状态失败:', error);
+      // 可选：回滚 UI 状态（如果写入失败）
+      // setVisitedShrines(visitedShrines);
     }
   };
 
@@ -318,34 +393,49 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
   // 登出处理
   const handleLogout = async () => {
     try {
+      // 清空待同步队列（避免下次登录时同步到错误的账户）
+      await clearPendingQueue();
       await firebaseLogout();
     } catch (error) {
       console.error('登出失败:', error);
     }
   };
 
-  // 合并本地数据到云端
-  const handleMergeToCloud = async () => {
-    const result = await mergeLocalToCloud();
+  // 合并所有数据（本地 + 云端）
+  const handleMergeAll = async () => {
+    const result = await mergeAll();
     setMergeDialog(null);
-    if (result.merged && result.count > 0) {
-      setSyncMessage(`${result.count}件のローカル記録をクラウドに同期しました`);
+    if (result.merged) {
+      setSyncMessage(`${result.count}件の記録を合併しました`);
       setTimeout(() => setSyncMessage(null), 3000);
-      // 重新加载数据
-      const visits = await getVisits();
-      setVisitedShrines(visits);
     }
+    // 重新加载数据
+    const visits = await getVisits();
+    setVisitedShrines(visits);
   };
 
-  // 丢弃本地数据，只用云端
-  const handleDiscardLocal = async () => {
-    localStorage.removeItem('visited-shrines');
+  // 使用云端数据（丢弃本地）
+  const handleUseCloud = async () => {
+    await clearLocalStorage();
     setMergeDialog(null);
-    setSyncMessage('ローカル記録を破棄しました');
+    setSyncMessage('クラウドの記録を使用します');
     setTimeout(() => setSyncMessage(null), 3000);
     // 重新加载云端数据
     const visits = await getVisits();
     setVisitedShrines(visits);
+  };
+
+  // 使用本地数据（完全覆盖云端：删除云端独有的，上传本地的）
+  const handleUseLocal = async () => {
+    const onlyCloudIds = mergeDialog?.onlyCloud || [];
+    const result = await replaceCloudWithLocal(onlyCloudIds);
+    setMergeDialog(null);
+    if (result.replaced) {
+      setSyncMessage(`ローカルを優先しました（${result.deleted}件削除、${result.uploaded}件アップロード）`);
+      setTimeout(() => setSyncMessage(null), 3000);
+      // 直接使用返回的本地数据，避免 Cosmos DB 一致性延迟
+      setVisitedShrines(result.finalVisits);
+    }
   };
 
   const stats = {
@@ -353,6 +443,34 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
     visited: visitedShrines.size,
     percentage: Math.round((visitedShrines.size / shrines.length) * 100)
   };
+
+  // 按地区分组神社
+  const shrinesByRegion = shrines.reduce((acc, shrine) => {
+    const region = shrine.region || '不明';
+    if (!acc[region]) {
+      acc[region] = [];
+    }
+    acc[region].push(shrine);
+    return acc;
+  }, {});
+
+  // 地区排序顺序
+  const regionOrder = ['北海道・東北', '関東', '甲信越', '東海', '近畿', '中国', '四国', '九州・沖縄'];
+
+  // 按顺序获取地区列表
+  const sortedRegions = regionOrder.filter(r => shrinesByRegion[r]);
+
+  // 计算每个地区的统计
+  const regionStats = sortedRegions.map(region => {
+    const regionShrines = shrinesByRegion[region];
+    const visitedCount = regionShrines.filter(s => visitedShrines.has(s.id)).length;
+    return {
+      region,
+      total: regionShrines.length,
+      visited: visitedCount,
+      percentage: Math.round((visitedCount / regionShrines.length) * 100)
+    };
+  });
 
   if (loading) {
     return (
@@ -364,28 +482,36 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
 
   return (
     <div className="flex flex-col bg-gray-50" style={{ height: viewportHeight }}>
-      {/* 合并确认对话框 */}
-      {mergeDialog && (
+      {/* 合并确认对话框（只在真正冲突时显示） */}
+      {mergeDialog && mergeDialog.type === 'conflict' && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-2">
-              ローカル記録が見つかりました
+              データの競合が見つかりました
             </h3>
-            <p className="text-gray-600 mb-4">
-              ログイン前に保存した{mergeDialog.localCount}件の記録があります。どうしますか？
-            </p>
+            <div className="text-sm text-gray-600 mb-4 space-y-1">
+              <p>・ローカルのみ: {mergeDialog.onlyLocalCount}件</p>
+              <p>・クラウドのみ: {mergeDialog.onlyCloudCount}件</p>
+              <p>・共通: {mergeDialog.commonCount}件</p>
+            </div>
             <div className="space-y-2">
               <button
-                onClick={handleMergeToCloud}
+                onClick={handleMergeAll}
                 className="w-full py-2 px-4 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
               >
-                クラウドに同期する
+                すべて合併する（推奨）
               </button>
               <button
-                onClick={handleDiscardLocal}
+                onClick={handleUseCloud}
+                className="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                クラウドを優先
+              </button>
+              <button
+                onClick={handleUseLocal}
                 className="w-full py-2 px-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
               >
-                ローカル記録を破棄する
+                ローカルを優先
               </button>
             </div>
           </div>
@@ -579,41 +705,64 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
 
         {/* 列表视图 */}
         {viewMode === 'list' && (
-          <div className="absolute inset-0 overflow-auto p-4 space-y-2 bg-gray-50">
-            {shrines.map(shrine => {
-              const isVisited = visitedShrines.has(shrine.id);
-              return (
-                <div
-                  key={shrine.id}
-                  className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between">
-                    <div
-                      className="flex-1 cursor-pointer"
-                      onClick={() => focusOnShrine(shrine)}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-bold text-gray-900">{shrine.name}</h3>
-                        {isVisited && (
-                          <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full">
-                            参拝済
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-600">{shrine.province} ・ {shrine.prefecture}</p>
+          <div className="absolute inset-0 overflow-auto p-4 space-y-4 bg-gray-50">
+            {regionStats.map(({ region, total, visited, percentage }) => (
+              <div key={region}>
+                {/* 地区标题 */}
+                <div className="bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg p-3 mb-2 shadow">
+                  <div className="flex justify-between items-center mb-1">
+                    <h2 className="text-lg font-bold">{region}</h2>
+                    <div className="text-sm">
+                      {visited}/{total}社 ({percentage}%)
                     </div>
-                    <button
-                      onClick={() => toggleVisited(shrine.id)}
-                      className={`p-2 rounded-full ${
-                        isVisited ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                      }`}
-                    >
-                      <Check size={20} />
-                    </button>
+                  </div>
+                  <div className="w-full bg-red-900 rounded-full h-1.5">
+                    <div
+                      className="bg-yellow-400 h-1.5 rounded-full transition-all duration-500"
+                      style={{ width: `${percentage}%` }}
+                    />
                   </div>
                 </div>
-              );
-            })}
+
+                {/* 该地区的神社列表 */}
+                <div className="space-y-2">
+                  {shrinesByRegion[region].map(shrine => {
+                    const isVisited = visitedShrines.has(shrine.id);
+                    return (
+                      <div
+                        key={shrine.id}
+                        className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div
+                            className="flex-1 cursor-pointer"
+                            onClick={() => focusOnShrine(shrine)}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-bold text-gray-900">{shrine.name}</h3>
+                              {isVisited && (
+                                <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full">
+                                  参拝済
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600">{shrine.province} ・ {shrine.prefecture}</p>
+                          </div>
+                          <button
+                            onClick={() => toggleVisited(shrine.id)}
+                            className={`p-2 rounded-full ${
+                              isVisited ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                            }`}
+                          >
+                            <Check size={20} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
