@@ -221,7 +221,15 @@ export const getAccessToken = async () => {
 
   const user = auth.currentUser;
   if (user) {
-    return await user.getIdToken();
+    try {
+      // 强制刷新 Token 以确保获取的是最新的 Firebase ID Token
+      const token = await user.getIdToken(true);
+      console.log('[Auth] Token retrieved. Length:', token.length, 'Segments:', (token.match(/\./g) || []).length + 1);
+      return token;
+    } catch (error) {
+      console.error('[Auth] Failed to get token:', error);
+      return null;
+    }
   }
   return null;
 };
