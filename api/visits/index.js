@@ -51,24 +51,31 @@ async function getContainer() {
 /**
  * 从 Authorization header 验证 Firebase token 并提取用户 ID
  */
-async function getUserId(req) {
+async function getUserId(req, context) {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
+    context.log.warn('[Auth] Missing Authorization header');
     return null;
   }
 
   // 开发模式：直接使用 mock token
   if (authHeader === 'Bearer mock-token') {
+    context.log.info('[Auth] Using dev mock-token');
     return 'dev-user-123';
   }
 
   // 验证 Firebase ID token
   try {
     const token = authHeader.replace('Bearer ', '');
+    if (!token) {
+      context.log.warn('[Auth] Token is empty after Bearer prefix');
+      return null;
+    }
     const decodedToken = await admin.auth().verifyIdToken(token);
+    context.log.info('[Auth] Token verified for user:', decodedToken.uid);
     return decodedToken.uid;
   } catch (e) {
-    console.error('Token 验证失败:', e.message);
+    context.log.error('[Auth] Token verification FAILED:', e.message);
     return null;
   }
 }
@@ -132,11 +139,14 @@ module.exports = async function (context, req) {
   const shrineId = context.bindingData.shrineId;
 
   // 验证用户身份
-  const userId = await getUserId(req);
+  const userId = await getUserId(req, context);
   if (!userId) {
     context.res = {
       status: 401,
-      body: { error: '未授权' }
+      body: {
+        error: '未授权',
+        debug: 'Authentication failed. Check Function App logs for details.'
+      }
     };
     return;
   }
@@ -147,6 +157,7 @@ module.exports = async function (context, req) {
     switch (method) {
       case 'GET':
         result = await getVisits(userId);
+        context.log.info(`[API] Successfully fetched labels for ${userId}`);
         context.res = {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
