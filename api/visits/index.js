@@ -14,91 +14,88 @@ let container = null;
 if (!admin.apps.length) {
   try {
     let serviceAccount;
-    // 优先从环境变量读取 (用于生产环境)
-    if (process.env.FIREBASE_ADMIN_CONFIG) {
-      serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_CONFIG);
-      console.log('Firebase Admin initialized from environment variable');
+    const configStr = process.env.FIREBASE_ADMIN_CONFIG;
+
+    if (configStr) {
+      // 尝试清理可能存在的转义字符或前后空格
+      const sanitizedConfig = configStr.trim();
+      try {
+        serviceAccount = JSON.parse(sanitizedConfig);
+        console.log('Firebase Admin: Successfully parsed config from env variable');
+      } catch (parseError) {
+        console.error('Firebase Admin: JSON parse failed, trying fallback string replacement...');
+        // 应对某些环境中私钥中回车符被转义的问题
+        const fixedConfig = sanitizedConfig.replace(/\\n/g, '\n');
+        serviceAccount = JSON.parse(fixedConfig);
+      }
     } else {
-      // 本地开发回退到文件
-      serviceAccount = require(path.join(__dirname, '..', 'firebase-admin-key.json'));
-      console.log('Firebase Admin initialized from local key file');
+      const keyPath = path.join(__dirname, '..', 'firebase-admin-key.json');
+      serviceAccount = require(keyPath);
+      console.log('Firebase Admin: Initialized from local path');
     }
 
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
+      credential: admin.credential.cert(serviceAccount),
+      projectId: serviceAccount.project_id
     });
   } catch (error) {
-    console.error('Firebase Admin initialization error:', error);
+    console.error('Firebase Admin CRITICAL INITIALIZATION ERROR:', error.message);
   }
 }
 
 /**
- * 初始化 Cosmos DB 连接
+ * 辅助函数：手动解码 JWT Header 以进行调试
  */
-async function getContainer() {
-  if (container) return container;
-
-  if (!endpoint || !key) {
-    throw new Error('Cosmos DB 配置缺失');
+function decodeJWTHeader(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 1) return null;
+    const header = Buffer.from(parts[0], 'base64').toString();
+    return JSON.parse(header);
+  } catch (e) {
+    return { error: 'Failed to decode header', message: e.message };
   }
-
-  const client = new CosmosClient({ endpoint, key });
-  const database = client.database(databaseId);
-  container = database.container(containerId);
-  return container;
 }
 
 /**
  * 从 Authorization header 验证 Firebase token 并提取用户 ID
  */
 async function getUserId(req, context) {
-  // 不区分大小写获取 Authorization 头
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
   if (!authHeader) {
-    context.log.warn('[Auth] Missing Authorization header');
     return { error: 'Missing Authorization header' };
   }
 
-  // 使用正则表达式提取 Bearer token 值 (排除前缀)
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) {
-    context.log.warn('[Auth] Invalid Authorization format. Header content:', authHeader.substring(0, 20));
-    return { error: 'Invalid Authorization format. Expected "Bearer <token>"' };
+    return { error: 'Invalid Authorization format. Use "Bearer <token>"' };
   }
 
   const token = match[1].trim();
 
-  // 开发模式：直接使用 mock token
-  if (token === 'mock-token') {
-    context.log.info('[Auth] Using dev mock-token');
-    return { userId: 'dev-user-123' };
-  }
-
-  if (token === 'null' || token === 'undefined' || !token) {
-    context.log.warn('[Auth] Token value is invalid literal:', token);
-    return { error: `Token value is invalid: ${token}` };
-  }
+  if (token === 'mock-token') return { userId: 'dev-user-123' };
+  if (!token || token === 'null') return { error: 'Token is null or empty' };
 
   // 验证 Firebase ID token
   try {
-    // 记录详细诊断信息以便锁定 Token 类型 (Access vs ID)
     const dotCount = (token.match(/\./g) || []).length;
-    const diagInfo = `Length: ${token.length}, Dots: ${dotCount}, Prefix: "${token.substring(0, 10)}..."`;
-    context.log.info(`[Auth] Verifying token. ${diagInfo}`);
+    const jwtHeader = decodeJWTHeader(token);
+    const diag = `Length: ${token.length}, Segments: ${dotCount + 1}, Header: ${JSON.stringify(jwtHeader)}`;
 
-    // 如果不是标准的 3 段式 JWT (ID Token 必须是 3 段)
+    context.log.info(`[Auth] Verifying. ${diag}`);
+
     if (dotCount !== 2) {
-      context.log.error(`[Auth] Token format error. ${diagInfo}`);
-      return { error: `Invalid JWT format (${diagInfo}). Expected 3 segments.` };
+      return { error: `Invalid JWT format. ${diag}. Expected 3 segments.` };
     }
 
     const decodedToken = await admin.auth().verifyIdToken(token);
-    context.log.info('[Auth] Token verified for user:', decodedToken.uid);
     return { userId: decodedToken.uid };
   } catch (e) {
-    const diag = `Length: ${token.length}, Dots: ${(token.match(/\./g) || []).length}, Prefix: "${token.substring(0, 10)}..."`;
-    context.log.error(`[Auth] Token verification FAILED: ${e.message} (${diag})`);
-    return { error: `${e.message} (${diag})` };
+    // 捕获所有验证错误，并包含诊断信息
+    const jwtHeader = decodeJWTHeader(token);
+    const errorMsg = `${e.message} (JWT Header: ${JSON.stringify(jwtHeader)})`;
+    context.log.error(`[Auth] Verification failed: ${errorMsg}`);
+    return { error: errorMsg };
   }
 }
 
