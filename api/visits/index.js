@@ -139,17 +139,19 @@ module.exports = async function (context, req) {
   const shrineId = context.bindingData.shrineId;
 
   // 验证用户身份
-  const userId = await getUserId(req, context);
-  if (!userId) {
+  const authResult = await getUserId(req, context);
+  if (authResult.error) {
     context.res = {
       status: 401,
       body: {
         error: '未授权',
-        debug: 'Authentication failed. Check Function App logs for details.'
+        message: authResult.error,
+        debug: 'Authentication failed. Check browser network response for the message field.'
       }
     };
     return;
   }
+  const userId = authResult.userId;
 
   try {
     let result;
