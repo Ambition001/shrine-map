@@ -224,6 +224,15 @@ export const getAccessToken = async () => {
     try {
       // 强制刷新 Token 以确保获取的是最新的 Firebase ID Token
       const token = await user.getIdToken(true);
+
+      // 检查 Token 算法 (HS256 是模拟器 Token，生产环境不可用)
+      const header = JSON.parse(atob(token.split('.')[0]));
+      if (header.alg === 'HS256') {
+        console.error('[Auth] Detected Emulator Token (HS256) in production. Forcing logout.');
+        await signOut(auth);
+        return null;
+      }
+
       console.log('[Auth] Token retrieved. Length:', token.length, 'Segments:', (token.match(/\./g) || []).length + 1);
       return token;
     } catch (error) {
