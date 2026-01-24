@@ -66,11 +66,15 @@ async function getUserId(req, context) {
 
   // 验证 Firebase ID token
   try {
-    const token = authHeader.replace('Bearer ', '');
-    if (!token) {
-      context.log.warn('[Auth] Token is empty after Bearer prefix');
-      return { error: 'Token is empty' };
+    const token = authHeader.replace('Bearer ', '').trim();
+    if (!token || token === 'null' || token === 'undefined') {
+      context.log.warn('[Auth] Token is empty or invalid string:', token);
+      return { error: 'Token is empty or invalid' };
     }
+
+    // 记录 Token 的前 10 位以便诊断格式
+    context.log.info(`[Auth] Verifying token starting with: ${token.substring(0, 10)}... (length: ${token.length})`);
+
     const decodedToken = await admin.auth().verifyIdToken(token);
     context.log.info('[Auth] Token verified for user:', decodedToken.uid);
     return { userId: decodedToken.uid };
