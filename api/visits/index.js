@@ -55,13 +55,13 @@ async function getUserId(req, context) {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     context.log.warn('[Auth] Missing Authorization header');
-    return null;
+    return { error: 'Missing Authorization header' };
   }
 
   // 开发模式：直接使用 mock token
   if (authHeader === 'Bearer mock-token') {
     context.log.info('[Auth] Using dev mock-token');
-    return 'dev-user-123';
+    return { userId: 'dev-user-123' };
   }
 
   // 验证 Firebase ID token
@@ -69,14 +69,14 @@ async function getUserId(req, context) {
     const token = authHeader.replace('Bearer ', '');
     if (!token) {
       context.log.warn('[Auth] Token is empty after Bearer prefix');
-      return null;
+      return { error: 'Token is empty' };
     }
     const decodedToken = await admin.auth().verifyIdToken(token);
     context.log.info('[Auth] Token verified for user:', decodedToken.uid);
-    return decodedToken.uid;
+    return { userId: decodedToken.uid };
   } catch (e) {
     context.log.error('[Auth] Token verification FAILED:', e.message);
-    return null;
+    return { error: e.message };
   }
 }
 
