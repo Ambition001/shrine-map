@@ -12,10 +12,24 @@ let container = null;
 
 // 初始化 Firebase Admin (仅初始化一次)
 if (!admin.apps.length) {
-  const serviceAccount = require(path.join(__dirname, '..', 'firebase-admin-key.json'));
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
+  try {
+    let serviceAccount;
+    // 优先从环境变量读取 (用于生产环境)
+    if (process.env.FIREBASE_ADMIN_CONFIG) {
+      serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_CONFIG);
+      console.log('Firebase Admin initialized from environment variable');
+    } else {
+      // 本地开发回退到文件
+      serviceAccount = require(path.join(__dirname, '..', 'firebase-admin-key.json'));
+      console.log('Firebase Admin initialized from local key file');
+    }
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+  } catch (error) {
+    console.error('Firebase Admin initialization error:', error);
+  }
 }
 
 /**

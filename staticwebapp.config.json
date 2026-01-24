@@ -1,0 +1,22 @@
+{
+    "navigationFallback": {
+        "rewrite": "/index.html"
+    },
+    "routes": [
+        {
+            "route": "/api/*",
+            "methods": [
+                "GET",
+                "POST",
+                "DELETE",
+                "PUT"
+            ],
+            "allowedRoles": [
+                "anonymous"
+            ]
+        }
+    ],
+    "mimeTypes": {
+        ".json": "application/json"
+    }
+}

@@ -22,7 +22,7 @@ const ShrineMapApp = () => {
   const selectedShrineRef = useRef(null); // 用于事件处理中访问当前选中状态
 
   // 过滤有经纬度的神社用于地图显示
-const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
+  const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
   const [visitedShrines, setVisitedShrines] = useState(new Set());
   const [selectedShrine, setSelectedShrine] = useState(null);
   const [viewMode, setViewMode] = useState('map');
@@ -37,6 +37,8 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
   const [collapsedRegions, setCollapsedRegions] = useState(new Set()); // 折叠的区域
   const [collapsedPrefectures, setCollapsedPrefectures] = useState(new Set()); // 折叠的县
   const [showMapChoice, setShowMapChoice] = useState(false); // 地图选择菜单
+  const [syncError, setSyncError] = useState(null); // 同步错误消息
+  const [isOnline, setIsOnline] = useState(navigator.onLine); // 网络状态
 
   // 监听视口高度变化（处理移动端地址栏）
   useEffect(() => {
@@ -63,6 +65,25 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
         window.visualViewport.removeEventListener('scroll', updateViewportHeight);
       }
       window.removeEventListener('resize', updateViewportHeight);
+    };
+  }, []);
+
+  // 监听网络状态变化
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSyncError(null);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
@@ -123,21 +144,31 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
   // 重要：必须先处理 redirect 结果，再设置 auth 监听器
   useEffect(() => {
     let previousUser = null;
-    let unsubscribe = () => {};
+    let authUnsubscribe = null;
+    let isMounted = true;
 
     const initAuth = async () => {
+      console.log('[Auth] initAuth started');
       // 1. 先处理登录重定向结果（从 Google/Twitter 登录页面返回后）
       try {
         const redirectUser = await handleRedirectResult();
-        if (redirectUser) {
-          console.log('Redirect login detected, user:', redirectUser.email);
+        if (redirectUser && isMounted) {
+          console.log('[Auth] Redirect results applied:', redirectUser.email);
+          setUser(redirectUser);
+          // 这里不需要重复调用 smartMerge，因为下方的 onAuthChange 会捕捉到用户变化
         }
       } catch (error) {
-        console.error('登录重定向处理失败:', error);
+        console.error('[Auth] Redirect result processing failed:', error);
       }
 
       // 2. 然后设置认证状态监听器
-      unsubscribe = onAuthChange(async (currentUser) => {
+      if (!isMounted) return;
+
+      authUnsubscribe = onAuthChange(async (currentUser) => {
+        if (!isMounted) return;
+
+        console.log('[Auth] State change detected:', currentUser ? currentUser.email : 'null');
+
         // 检测是否是新登录（之前没用户，现在有用户）
         const isNewLogin = !previousUser && currentUser;
         previousUser = currentUser;
@@ -147,45 +178,36 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
 
         // 用户刚登录时，使用智能合并
         if (isNewLogin) {
+          console.log('[Auth] New login detected, initiating smartMerge');
           const mergeResult = await smartMerge();
-
+          // ... 剩下的逻辑保持不变 ...
           switch (mergeResult.action) {
-            case 'use_cloud':
-              // 静默使用云端数据，无需提示
-              break;
-
-            case 'use_local':
-              // 云端 API 出错，使用本地数据（静默处理）
-              console.warn('云端 API 不可用，使用本地数据');
-              break;
-
+            case 'use_cloud': break;
+            case 'use_local': console.warn('云端 API 不可用，使用本地数据'); break;
             case 'pending_synced':
-              // 待同步操作已完成，显示提示
               if (mergeResult.count > 0) {
                 setSyncMessage(`${mergeResult.count}件の記録を同期しました`);
                 setTimeout(() => setSyncMessage(null), 2000);
               }
               break;
-
+            case 'partial_sync':
+              setSyncMessage(`${mergeResult.count}件を同期しました（${mergeResult.failed}件失败）`);
+              setTimeout(() => setSyncMessage(null), 3000);
+              break;
             case 'uploaded_local':
-              // 自动上传成功，显示简短提示
               setSyncMessage(`${mergeResult.count}件の記録を同期しました`);
               setTimeout(() => setSyncMessage(null), 2000);
               break;
-
             case 'ask_user':
-              // 只有真正冲突时才弹窗
               setMergeDialog({
                 type: 'conflict',
                 onlyLocalCount: mergeResult.conflict.onlyLocal.length,
                 onlyCloudCount: mergeResult.conflict.onlyCloud.length,
                 commonCount: mergeResult.conflict.common.length,
-                onlyCloud: mergeResult.conflict.onlyCloud // 保存云端独有的ID，用于"本地优先"时删除
+                onlyCloud: mergeResult.conflict.onlyCloud
               });
               break;
-
-            default:
-              break;
+            default: break;
           }
 
           // 重新加载数据
@@ -195,10 +217,15 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
       });
     };
 
-    // 执行初始化
     initAuth();
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      if (authUnsubscribe) {
+        console.log('[Auth] Cleaning up auth listener');
+        authUnsubscribe();
+      }
+    };
   }, []);
 
   // 加载参拜记录 - 在用户状态变化时重新加载
@@ -380,27 +407,32 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
   }, [mapLoaded, visitedShrines, generateGeoJSON]);
 
   // 切换参拜状态（乐观更新：先更新 UI，再写入本地/同步云端）
-  const toggleVisited = async (shrineId) => {
-    // 1. 立即计算新状态
-    const newVisited = new Set(visitedShrines);
-    if (newVisited.has(shrineId)) {
-      newVisited.delete(shrineId);
-    } else {
-      newVisited.add(shrineId);
-    }
+  const toggleVisited = useCallback(async (shrineId) => {
+    // 使用函数式更新避免 Race Condition
+    setVisitedShrines(prev => {
+      const newVisited = new Set(prev);
+      if (newVisited.has(shrineId)) {
+        newVisited.delete(shrineId);
+      } else {
+        newVisited.add(shrineId);
+      }
 
-    // 2. 立即更新 UI（乐观更新）
-    setVisitedShrines(newVisited);
+      // 后台写入本地存储并同步云端（不阻塞 UI）
+      toggleVisitOptimistic(shrineId, prev).catch(error => {
+        console.error('切换参拜状态失败:', error);
+        // 显示错误提示
+        if (!navigator.onLine) {
+          setSyncError('オフラインです。オンラインになったら自動的に同期されます。');
+        } else {
+          setSyncError('同期に失敗しました。後で再試行されます。');
+        }
+        // 3秒后清除错误提示
+        setTimeout(() => setSyncError(null), 3000);
+      });
 
-    // 3. 后台写入本地存储并同步云端（不阻塞 UI）
-    try {
-      await toggleVisitOptimistic(shrineId, visitedShrines);
-    } catch (error) {
-      console.error('切换参拜状态失败:', error);
-      // 可选：回滚 UI 状态（如果写入失败）
-      // setVisitedShrines(visitedShrines);
-    }
-  };
+      return newVisited;
+    });
+  }, []);
 
   // 点击列表项时移动地图
   const focusOnShrine = (shrine) => {
@@ -612,6 +644,20 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
         </div>
       )}
 
+      {/* 同步错误提示 */}
+      {syncError && (
+        <div className="bg-red-500 text-white px-4 py-2 text-sm text-center">
+          ⚠ {syncError}
+        </div>
+      )}
+
+      {/* 离线状态提示 */}
+      {!isOnline && (
+        <div className="bg-orange-500 text-white px-4 py-2 text-sm text-center">
+          オフラインモード - データは後で同期されます
+        </div>
+      )}
+
       {/* 头部 */}
       <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-4 shadow-lg">
         <div className="flex justify-between items-start mb-2">
@@ -648,10 +694,10 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
                     className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center gap-2 text-sm"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                     </svg>
                     Google
                   </button>
@@ -660,7 +706,7 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
                     className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center gap-2 text-sm"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path fill="#000" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                      <path fill="#000" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                     </svg>
                     X (Twitter)
                   </button>
@@ -686,22 +732,20 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
       <div className="flex border-b bg-white">
         <button
           onClick={() => setViewMode('map')}
-          className={`flex-1 py-3 flex items-center justify-center gap-2 ${
-            viewMode === 'map'
-              ? 'bg-red-50 text-red-600 border-b-2 border-red-600'
-              : 'text-gray-600'
-          }`}
+          className={`flex-1 py-3 flex items-center justify-center gap-2 ${viewMode === 'map'
+            ? 'bg-red-50 text-red-600 border-b-2 border-red-600'
+            : 'text-gray-600'
+            }`}
         >
           <Map size={18} />
           地図表示
         </button>
         <button
           onClick={() => setViewMode('list')}
-          className={`flex-1 py-3 flex items-center justify-center gap-2 ${
-            viewMode === 'list'
-              ? 'bg-red-50 text-red-600 border-b-2 border-red-600'
-              : 'text-gray-600'
-          }`}
+          className={`flex-1 py-3 flex items-center justify-center gap-2 ${viewMode === 'list'
+            ? 'bg-red-50 text-red-600 border-b-2 border-red-600'
+            : 'text-gray-600'
+            }`}
         >
           <List size={18} />
           リスト表示
@@ -755,11 +799,10 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
             <div className="flex gap-2">
               <button
                 onClick={() => toggleVisited(selectedShrine.id)}
-                className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
-                  visitedShrines.has(selectedShrine.id)
-                    ? 'bg-green-500 text-white hover:bg-green-600'
-                    : 'bg-red-500 text-white hover:bg-red-600'
-                }`}
+                className={`flex-1 py-2 rounded-lg font-medium transition-colors ${visitedShrines.has(selectedShrine.id)
+                  ? 'bg-green-500 text-white hover:bg-green-600'
+                  : 'bg-red-500 text-white hover:bg-red-600'
+                  }`}
               >
                 {visitedShrines.has(selectedShrine.id) ? (
                   <span className="flex items-center justify-center gap-2">
@@ -850,104 +893,103 @@ const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
               };
 
               return (
-              <div key={region}>
-                {/* 区域标题 - 可点击折叠 */}
-                <div
-                  className="bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg p-3 mb-3 shadow cursor-pointer"
-                  onClick={toggleRegionCollapse}
-                >
-                  <div className="flex justify-between items-center mb-1">
-                    <div className="flex items-center gap-2">
-                      {isRegionCollapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}
-                      <h2 className="text-lg font-bold">{region}</h2>
-                    </div>
-                    <div className="text-sm">
-                      {visited}/{total}社 ({percentage}%)
-                    </div>
-                  </div>
-                  <div className="w-full bg-red-900 rounded-full h-1.5">
-                    <div
-                      className="bg-yellow-400 h-1.5 rounded-full transition-all duration-500"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* 该区域下的县列表 - 区域未折叠时才显示 */}
-                {!isRegionCollapsed && (
-                <div className="space-y-3 ml-2">
-                  {prefectures.map(({ prefecture, shrines: prefectureShrines, total, visited }) => {
-                    const isCollapsed = collapsedPrefectures.has(`${region}-${prefecture}`);
-                    const toggleCollapse = () => {
-                      const key = `${region}-${prefecture}`;
-                      setCollapsedPrefectures(prev => {
-                        const next = new Set(prev);
-                        if (next.has(key)) {
-                          next.delete(key);
-                        } else {
-                          next.add(key);
-                        }
-                        return next;
-                      });
-                    };
-
-                    return (
-                      <div key={prefecture}>
-                        {/* 县标题 - 可点击折叠 */}
-                        <div
-                          className="flex items-center gap-1 text-sm font-semibold text-gray-700 mb-2 pl-1 border-l-2 border-red-400 cursor-pointer hover:text-gray-900"
-                          onClick={toggleCollapse}
-                        >
-                          {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                          <span>{prefecture}</span>
-                          <span className="text-gray-500 font-normal">({visited}/{total})</span>
-                        </div>
-
-                        {/* 该县下的神社列表 - 可折叠 */}
-                        {!isCollapsed && (
-                          <div className="space-y-2">
-                            {prefectureShrines.map(shrine => {
-                              const isVisited = visitedShrines.has(shrine.id);
-                              return (
-                                <div
-                                  key={shrine.id}
-                                  className="bg-white rounded-lg shadow p-3 hover:shadow-md transition-shadow ml-4"
-                                >
-                                  <div className="flex items-start justify-between">
-                                    <div
-                                      className="flex-1 cursor-pointer"
-                                      onClick={() => focusOnShrine(shrine)}
-                                    >
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <h3 className="font-bold text-gray-900">{shrine.name}</h3>
-                                        {isVisited && (
-                                          <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">
-                                            参拝済
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="text-xs text-gray-500">{shrine.province}</p>
-                                    </div>
-                                    <button
-                                      onClick={() => toggleVisited(shrine.id)}
-                                      className={`p-2 rounded-full ${
-                                        isVisited ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                                      }`}
-                                    >
-                                      <Check size={20} />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                <div key={region}>
+                  {/* 区域标题 - 可点击折叠 */}
+                  <div
+                    className="bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg p-3 mb-3 shadow cursor-pointer"
+                    onClick={toggleRegionCollapse}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        {isRegionCollapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}
+                        <h2 className="text-lg font-bold">{region}</h2>
                       </div>
-                    );
-                  })}
+                      <div className="text-sm">
+                        {visited}/{total}社 ({percentage}%)
+                      </div>
+                    </div>
+                    <div className="w-full bg-red-900 rounded-full h-1.5">
+                      <div
+                        className="bg-yellow-400 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 该区域下的县列表 - 区域未折叠时才显示 */}
+                  {!isRegionCollapsed && (
+                    <div className="space-y-3 ml-2">
+                      {prefectures.map(({ prefecture, shrines: prefectureShrines, total, visited }) => {
+                        const isCollapsed = collapsedPrefectures.has(`${region}-${prefecture}`);
+                        const toggleCollapse = () => {
+                          const key = `${region}-${prefecture}`;
+                          setCollapsedPrefectures(prev => {
+                            const next = new Set(prev);
+                            if (next.has(key)) {
+                              next.delete(key);
+                            } else {
+                              next.add(key);
+                            }
+                            return next;
+                          });
+                        };
+
+                        return (
+                          <div key={prefecture}>
+                            {/* 县标题 - 可点击折叠 */}
+                            <div
+                              className="flex items-center gap-1 text-sm font-semibold text-gray-700 mb-2 pl-1 border-l-2 border-red-400 cursor-pointer hover:text-gray-900"
+                              onClick={toggleCollapse}
+                            >
+                              {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                              <span>{prefecture}</span>
+                              <span className="text-gray-500 font-normal">({visited}/{total})</span>
+                            </div>
+
+                            {/* 该县下的神社列表 - 可折叠 */}
+                            {!isCollapsed && (
+                              <div className="space-y-2">
+                                {prefectureShrines.map(shrine => {
+                                  const isVisited = visitedShrines.has(shrine.id);
+                                  return (
+                                    <div
+                                      key={shrine.id}
+                                      className="bg-white rounded-lg shadow p-3 hover:shadow-md transition-shadow ml-4"
+                                    >
+                                      <div className="flex items-start justify-between">
+                                        <div
+                                          className="flex-1 cursor-pointer"
+                                          onClick={() => focusOnShrine(shrine)}
+                                        >
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <h3 className="font-bold text-gray-900">{shrine.name}</h3>
+                                            {isVisited && (
+                                              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">
+                                                参拝済
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-xs text-gray-500">{shrine.province}</p>
+                                        </div>
+                                        <button
+                                          onClick={() => toggleVisited(shrine.id)}
+                                          className={`p-2 rounded-full ${isVisited ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                                            }`}
+                                        >
+                                          <Check size={20} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                )}
-              </div>
               );
             })}
           </div>
