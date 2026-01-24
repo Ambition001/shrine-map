@@ -75,7 +75,14 @@ export const getVisits = async () => {
     });
 
     if (!response.ok) {
-      throw new Error(`API 错误: ${response.status}`);
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { error: 'Unknown API error' };
+      }
+      console.error('[API Error Details]', errorData);
+      throw new Error(`API 错误: ${response.status}${errorData.message ? ' - ' + errorData.message : ''}`);
     }
 
     const data = await response.json();
