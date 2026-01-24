@@ -83,20 +83,22 @@ async function getUserId(req, context) {
   try {
     // 记录详细诊断信息以便锁定 Token 类型 (Access vs ID)
     const dotCount = (token.match(/\./g) || []).length;
-    context.log.info(`[Auth] Verifying token. Length: ${token.length}, Dots: ${dotCount}, Prefix: "${token.substring(0, 10)}..."`);
+    const diagInfo = `Length: ${token.length}, Dots: ${dotCount}, Prefix: "${token.substring(0, 10)}..."`;
+    context.log.info(`[Auth] Verifying token. ${diagInfo}`);
 
     // 如果不是标准的 3 段式 JWT (ID Token 必须是 3 段)
     if (dotCount !== 2) {
-      context.log.error('[Auth] Token is NOT a 3-part JWT. It might be an access token instead.');
-      return { error: `Invalid JWT format. Expected 3 segments, found ${dotCount + 1}` };
+      context.log.error(`[Auth] Token format error. ${diagInfo}`);
+      return { error: `Invalid JWT format (${diagInfo}). Expected 3 segments.` };
     }
 
     const decodedToken = await admin.auth().verifyIdToken(token);
     context.log.info('[Auth] Token verified for user:', decodedToken.uid);
     return { userId: decodedToken.uid };
   } catch (e) {
-    context.log.error('[Auth] Token verification FAILED:', e.message);
-    return { error: e.message };
+    const diag = `Length: ${token.length}, Dots: ${(token.match(/\./g) || []).length}, Prefix: "${token.substring(0, 10)}..."`;
+    context.log.error(`[Auth] Token verification FAILED: ${e.message} (${diag})`);
+    return { error: `${e.message} (${diag})` };
   }
 }
 
