@@ -52,28 +52,44 @@ async function getContainer() {
  * 从 Authorization header 验证 Firebase token 并提取用户 ID
  */
 async function getUserId(req, context) {
-  const authHeader = req.headers.authorization;
+  // 不区分大小写获取 Authorization 头
+  const authHeader = req.headers.authorization || req.headers.Authorization || '';
   if (!authHeader) {
     context.log.warn('[Auth] Missing Authorization header');
     return { error: 'Missing Authorization header' };
   }
 
+  // 使用正则表达式提取 Bearer token 值 (排除前缀)
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    context.log.warn('[Auth] Invalid Authorization format. Header content:', authHeader.substring(0, 20));
+    return { error: 'Invalid Authorization format. Expected "Bearer <token>"' };
+  }
+
+  const token = match[1].trim();
+
   // 开发模式：直接使用 mock token
-  if (authHeader === 'Bearer mock-token') {
+  if (token === 'mock-token') {
     context.log.info('[Auth] Using dev mock-token');
     return { userId: 'dev-user-123' };
   }
 
+  if (token === 'null' || token === 'undefined' || !token) {
+    context.log.warn('[Auth] Token value is invalid literal:', token);
+    return { error: `Token value is invalid: ${token}` };
+  }
+
   // 验证 Firebase ID token
   try {
-    const token = authHeader.replace('Bearer ', '').trim();
-    if (!token || token === 'null' || token === 'undefined') {
-      context.log.warn('[Auth] Token is empty or invalid string:', token);
-      return { error: 'Token is empty or invalid' };
-    }
+    // 记录详细诊断信息以便锁定 Token 类型 (Access vs ID)
+    const dotCount = (token.match(/\./g) || []).length;
+    context.log.info(`[Auth] Verifying token. Length: ${token.length}, Dots: ${dotCount}, Prefix: "${token.substring(0, 10)}..."`);
 
-    // 记录 Token 的前 10 位以便诊断格式
-    context.log.info(`[Auth] Verifying token starting with: ${token.substring(0, 10)}... (length: ${token.length})`);
+    // 如果不是标准的 3 段式 JWT (ID Token 必须是 3 段)
+    if (dotCount !== 2) {
+      context.log.error('[Auth] Token is NOT a 3-part JWT. It might be an access token instead.');
+      return { error: `Invalid JWT format. Expected 3 segments, found ${dotCount + 1}` };
+    }
 
     const decodedToken = await admin.auth().verifyIdToken(token);
     context.log.info('[Auth] Token verified for user:', decodedToken.uid);
