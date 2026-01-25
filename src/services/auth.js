@@ -5,7 +5,6 @@
  */
 import {
   signInWithPopup,
-  signInWithRedirect,
   getRedirectResult,
   signOut,
   onAuthStateChanged,
@@ -131,42 +130,20 @@ export const isAuthenticated = () => {
   return auth.currentUser !== null;
 };
 
-// 检测是否为移动端 (更稳健的检测)
-const isMobile = () => {
-  const ua = navigator.userAgent;
-  const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-  const isSmallScreen = window.innerWidth <= 1024;
-  // 检查是否为触屏设备 (很多现代 iPad 虽然 UA 是 Mac，但有触控点)
-  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-
-  const result = isMobileUA || (isSmallScreen && isTouch);
-  console.log('[Auth] Device detection - isMobile:', result, 'UA:', ua, 'Width:', window.innerWidth, 'Touch:', isTouch);
-  return result;
-};
-
 /**
  * Google 登录
- * 移动端使用 redirect（更好的 UX），桌面端使用 popup
+ * 统一使用 popup（redirect 在非 Firebase Hosting 上有问题）
  */
 export const loginWithGoogle = async () => {
-  const mobile = isMobile();
-  console.log('[Auth] loginWithGoogle called, isMobile:', mobile);
+  console.log('[Auth] loginWithGoogle called');
 
   if (isDev && !authEnabled) {
     console.log('[Auth] Dev mode, returning mock user');
     return MOCK_USER;
   }
 
-  if (mobile) {
-    // 移动端：直接使用 redirect（避免新标签页问题）
-    console.log('[Auth] Mobile: using signInWithRedirect...');
-    await signInWithRedirect(auth, googleProvider);
-    return null; // 页面会跳转
-  }
-
-  // 桌面端：使用 popup
   try {
-    console.log('[Auth] Desktop: trying signInWithPopup...');
+    console.log('[Auth] Using signInWithPopup...');
     const result = await signInWithPopup(auth, googleProvider);
     console.log('[Auth] Popup login successful:', result.user.email);
     return {
@@ -176,39 +153,25 @@ export const loginWithGoogle = async () => {
       photoURL: result.user.photoURL
     };
   } catch (error) {
-    // popup 被阻止时，fallback 到 redirect
-    if (error.code === 'auth/popup-blocked' ||
-        error.code === 'auth/popup-closed-by-user' ||
-        error.code === 'auth/cancelled-popup-request') {
-      console.log('[Auth] Popup failed/blocked, falling back to redirect...', error.code);
-      await signInWithRedirect(auth, googleProvider);
-      return null;
-    }
-    console.error('[Auth] Login error:', error);
+    console.error('[Auth] Login error:', error.code, error.message);
+    // 不再 fallback 到 redirect，因为在非 Firebase Hosting 上不可用
     throw error;
   }
 };
 
 /**
  * Twitter/X 登录
- * 移动端使用 redirect，桌面端使用 popup
+ * 统一使用 popup
  */
 export const loginWithTwitter = async () => {
-  const mobile = isMobile();
-  console.log('[Auth] loginWithTwitter called, isMobile:', mobile);
+  console.log('[Auth] loginWithTwitter called');
 
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
 
-  if (mobile) {
-    console.log('[Auth] Mobile: using signInWithRedirect...');
-    await signInWithRedirect(auth, twitterProvider);
-    return null;
-  }
-
   try {
-    console.log('[Auth] Desktop: trying signInWithPopup...');
+    console.log('[Auth] Using signInWithPopup...');
     const result = await signInWithPopup(auth, twitterProvider);
     console.log('[Auth] Popup login successful:', result.user.email);
     return {
@@ -218,14 +181,7 @@ export const loginWithTwitter = async () => {
       photoURL: result.user.photoURL
     };
   } catch (error) {
-    if (error.code === 'auth/popup-blocked' ||
-        error.code === 'auth/popup-closed-by-user' ||
-        error.code === 'auth/cancelled-popup-request') {
-      console.log('[Auth] Popup failed/blocked, falling back to redirect...', error.code);
-      await signInWithRedirect(auth, twitterProvider);
-      return null;
-    }
-    console.error('[Auth] Login error:', error);
+    console.error('[Auth] Login error:', error.code, error.message);
     throw error;
   }
 };
