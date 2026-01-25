@@ -116,7 +116,8 @@ async function getUserId(req, context) {
   try {
     const dotCount = (token.match(/\./g) || []).length;
     const jwtHeader = decodeJWTHeader(token);
-    const diag = `Length: ${token.length}, Segments: ${dotCount + 1}, Header: ${JSON.stringify(jwtHeader)}`;
+    const tokenPreview = token.substring(0, 80);
+    const diag = `Length: ${token.length}, Segments: ${dotCount + 1}, Header: ${JSON.stringify(jwtHeader)}, Preview: ${tokenPreview}`;
 
     context.log.info(`[Auth] Verifying. ${diag}`);
 
@@ -129,9 +130,10 @@ async function getUserId(req, context) {
   } catch (e) {
     // 捕获所有验证错误，并包含诊断信息
     const jwtHeader = decodeJWTHeader(token);
+    const tokenPreview = token.substring(0, 80);
     const errorMsg = `${e.message} (JWT Header: ${JSON.stringify(jwtHeader)})`;
     context.log.error(`[Auth] Verification failed: ${errorMsg}`);
-    return { error: errorMsg };
+    return { error: errorMsg, tokenPreview };
   }
 }
 
@@ -205,7 +207,8 @@ module.exports = async function (context, req) {
         firebaseInitStatus,
         firebaseInitError,
         hasFirebaseConfig: !!process.env.FIREBASE_ADMIN_CONFIG,
-        configLength: process.env.FIREBASE_ADMIN_CONFIG ? process.env.FIREBASE_ADMIN_CONFIG.length : 0
+        configLength: process.env.FIREBASE_ADMIN_CONFIG ? process.env.FIREBASE_ADMIN_CONFIG.length : 0,
+        receivedTokenPreview: authResult.tokenPreview || 'N/A'
       }
     };
     return;
