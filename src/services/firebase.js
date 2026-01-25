@@ -14,6 +14,14 @@ const firebaseConfig = {
   measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
+// 调试：检查配置是否正确加载
+console.log('[Firebase] Config check:', {
+  hasApiKey: !!firebaseConfig.apiKey,
+  hasAuthDomain: !!firebaseConfig.authDomain,
+  hasProjectId: !!firebaseConfig.projectId,
+  projectId: firebaseConfig.projectId
+});
+
 // 初始化 Firebase
 const app = initializeApp(firebaseConfig);
 
