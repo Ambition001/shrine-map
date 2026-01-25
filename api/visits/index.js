@@ -97,17 +97,24 @@ function decodeJWTHeader(token) {
  * 从 Authorization header 验证 Firebase token 并提取用户 ID
  */
 async function getUserId(req, context) {
+  // 优先使用 X-Firebase-Token（绕过 Azure SWA 的 Authorization header 干预）
+  const firebaseToken = req.headers['x-firebase-token'];
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
-  if (!authHeader) {
-    return { error: 'Missing Authorization header' };
-  }
 
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    return { error: 'Invalid Authorization format. Use "Bearer <token>"' };
+  let token;
+  if (firebaseToken) {
+    token = firebaseToken.trim();
+    context.log.info('[Auth] Using X-Firebase-Token header');
+  } else if (authHeader) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!match) {
+      return { error: 'Invalid Authorization format. Use "Bearer <token>"' };
+    }
+    token = match[1].trim();
+    context.log.info('[Auth] Using Authorization header (fallback)');
+  } else {
+    return { error: 'Missing authentication token. Provide X-Firebase-Token or Authorization header.' };
   }
-
-  const token = match[1].trim();
 
   if (token === 'mock-token') return { userId: 'dev-user-123' };
   if (!token || token === 'null') return { error: 'Token is null or empty' };

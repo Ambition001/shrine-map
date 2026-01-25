@@ -24,6 +24,16 @@ const authEnabled = process.env.REACT_APP_AUTH_ENABLED === 'true';
 const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 /**
+ * 构建 API 请求 headers
+ * 使用 X-Firebase-Token 绕过 Azure Static Web App 的 Authorization header 干预
+ */
+const buildAuthHeaders = (token) => ({
+  'Authorization': `Bearer ${token}`,
+  'X-Firebase-Token': token,
+  'Content-Type': 'application/json'
+});
+
+/**
  * 初始化本地存储（IndexedDB）
  * 应用启动时调用，自动迁移 localStorage 数据
  * @returns {Promise<{migrated: boolean, count: number}>}
@@ -68,10 +78,7 @@ export const getVisits = async () => {
   // 已登录：调用 API
   try {
     const response = await fetch(`${API_URL}/visits`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+      headers: buildAuthHeaders(token)
     });
 
     if (!response.ok) {
@@ -118,10 +125,7 @@ export const addVisit = async (shrineId) => {
   try {
     const response = await fetch(`${API_URL}/visits/${shrineId}`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+      headers: buildAuthHeaders(token)
     });
 
     if (!response.ok) {
@@ -161,10 +165,7 @@ export const removeVisit = async (shrineId) => {
   try {
     const response = await fetch(`${API_URL}/visits/${shrineId}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+      headers: buildAuthHeaders(token)
     });
 
     if (!response.ok) {
@@ -214,10 +215,7 @@ export const mergeLocalToCloud = async () => {
   const promises = [...localVisits].map(shrineId =>
     fetch(`${API_URL}/visits/${shrineId}`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+      headers: buildAuthHeaders(token)
     })
   );
 
@@ -301,10 +299,7 @@ export const smartMerge = async () => {
   let cloudVisits;
   try {
     const response = await fetch(`${API_URL}/visits`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+      headers: buildAuthHeaders(token)
     });
 
     if (!response.ok) {
@@ -383,10 +378,7 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
     const deletePromises = onlyCloudIds.map(shrineId =>
       fetch(`${API_URL}/visits/${shrineId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: buildAuthHeaders(token)
       })
     );
 
@@ -403,10 +395,7 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
     const uploadPromises = [...localVisits].map(shrineId =>
       fetch(`${API_URL}/visits/${shrineId}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: buildAuthHeaders(token)
       })
     );
 
@@ -450,10 +439,7 @@ export const mergeAll = async () => {
   let cloudVisits;
   try {
     const response = await fetch(`${API_URL}/visits`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+      headers: buildAuthHeaders(token)
     });
     const data = await response.json();
     cloudVisits = new Set(data.map(v => v.shrineId));
@@ -474,10 +460,7 @@ export const mergeAll = async () => {
   const promises = onlyLocal.map(shrineId =>
     fetch(`${API_URL}/visits/${shrineId}`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+      headers: buildAuthHeaders(token)
     })
   );
 
@@ -547,10 +530,7 @@ const doSync = async (token) => {
     try {
       const response = await fetch(`${API_URL}/visits/${op.shrineId}`, {
         method: op.action === 'add' ? 'POST' : 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: buildAuthHeaders(token)
       });
 
       if (response.ok || response.status === 404) {
