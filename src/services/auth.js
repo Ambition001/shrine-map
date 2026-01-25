@@ -1,16 +1,23 @@
 /**
  * 认证服务
  * 使用 Firebase Auth + Google/Twitter 登录
- * 使用 signInWithRedirect 以支持移动端和内网访问
+ * 移动端优先尝试 popup，失败时 fallback 到 redirect
  */
 import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  browserLocalPersistence,
+  setPersistence
 } from 'firebase/auth';
 import { auth, googleProvider, twitterProvider } from './firebase';
+
+// 确保使用 localStorage 持久化，这样 redirect 返回后能恢复状态
+setPersistence(auth, browserLocalPersistence).catch(e => {
+  console.warn('[Auth] Failed to set persistence:', e);
+});
 
 const isDev = process.env.NODE_ENV === 'development';
 const authEnabled = process.env.REACT_APP_AUTH_ENABLED === 'true';
@@ -134,7 +141,7 @@ const isMobile = () => {
 
 /**
  * Google 登录
- * 移动端使用 redirect，桌面端使用 popup
+ * 优先使用 popup（兼容性更好），失败时 fallback 到 redirect
  */
 export const loginWithGoogle = async () => {
   console.log('[Auth] loginWithGoogle called, isMobile:', isMobile());
@@ -144,24 +151,26 @@ export const loginWithGoogle = async () => {
     return MOCK_USER;
   }
 
+  // 优先尝试 popup（即使在移动端，现代浏览器也支持）
   try {
-    if (isMobile()) {
-      // 移动端使用 redirect
-      console.log('[Auth] Using signInWithRedirect for mobile...');
-      await signInWithRedirect(auth, googleProvider);
-    } else {
-      // 桌面端使用 popup
-      console.log('[Auth] Using signInWithPopup for desktop...');
-      const result = await signInWithPopup(auth, googleProvider);
-      console.log('[Auth] Popup login successful:', result.user.email);
-      return {
-        id: result.user.uid,
-        name: result.user.displayName,
-        email: result.user.email,
-        photoURL: result.user.photoURL
-      };
-    }
+    console.log('[Auth] Trying signInWithPopup...');
+    const result = await signInWithPopup(auth, googleProvider);
+    console.log('[Auth] Popup login successful:', result.user.email);
+    return {
+      id: result.user.uid,
+      name: result.user.displayName,
+      email: result.user.email,
+      photoURL: result.user.photoURL
+    };
   } catch (error) {
+    // popup 被阻止或失败时，fallback 到 redirect
+    if (error.code === 'auth/popup-blocked' ||
+        error.code === 'auth/popup-closed-by-user' ||
+        error.code === 'auth/cancelled-popup-request') {
+      console.log('[Auth] Popup failed/blocked, falling back to redirect...', error.code);
+      await signInWithRedirect(auth, googleProvider);
+      return null; // redirect 后页面会刷新
+    }
     console.error('[Auth] Login error:', error);
     throw error;
   }
@@ -169,7 +178,7 @@ export const loginWithGoogle = async () => {
 
 /**
  * Twitter/X 登录
- * 移动端使用 redirect，桌面端使用 popup
+ * 优先使用 popup，失败时 fallback 到 redirect
  */
 export const loginWithTwitter = async () => {
   console.log('[Auth] loginWithTwitter called, isMobile:', isMobile());
@@ -179,21 +188,23 @@ export const loginWithTwitter = async () => {
   }
 
   try {
-    if (isMobile()) {
-      console.log('[Auth] Using signInWithRedirect for mobile...');
-      await signInWithRedirect(auth, twitterProvider);
-    } else {
-      console.log('[Auth] Using signInWithPopup for desktop...');
-      const result = await signInWithPopup(auth, twitterProvider);
-      console.log('[Auth] Popup login successful:', result.user.email);
-      return {
-        id: result.user.uid,
-        name: result.user.displayName,
-        email: result.user.email,
-        photoURL: result.user.photoURL
-      };
-    }
+    console.log('[Auth] Trying signInWithPopup...');
+    const result = await signInWithPopup(auth, twitterProvider);
+    console.log('[Auth] Popup login successful:', result.user.email);
+    return {
+      id: result.user.uid,
+      name: result.user.displayName,
+      email: result.user.email,
+      photoURL: result.user.photoURL
+    };
   } catch (error) {
+    if (error.code === 'auth/popup-blocked' ||
+        error.code === 'auth/popup-closed-by-user' ||
+        error.code === 'auth/cancelled-popup-request') {
+      console.log('[Auth] Popup failed/blocked, falling back to redirect...', error.code);
+      await signInWithRedirect(auth, twitterProvider);
+      return null;
+    }
     console.error('[Auth] Login error:', error);
     throw error;
   }
