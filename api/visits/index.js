@@ -2,6 +2,12 @@ const { CosmosClient } = require('@azure/cosmos');
 const admin = require('firebase-admin');
 const path = require('path');
 
+// 确保 globalThis.crypto 可用（Azure Functions Node.js 18+ 需要）
+if (typeof globalThis.crypto === 'undefined') {
+  const { webcrypto } = require('crypto');
+  globalThis.crypto = webcrypto;
+}
+
 // Cosmos DB 配置
 const endpoint = process.env.COSMOS_ENDPOINT;
 const key = process.env.COSMOS_KEY;
