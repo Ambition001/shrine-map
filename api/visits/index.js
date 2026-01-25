@@ -9,6 +9,26 @@ const databaseId = process.env.COSMOS_DATABASE || 'shrine-map';
 const containerId = process.env.COSMOS_CONTAINER || 'user-visits';
 
 let container = null;
+let cosmosClient = null;
+
+/**
+ * 获取 Cosmos DB 容器（懒加载）
+ */
+async function getContainer() {
+  if (container) return container;
+
+  if (!endpoint || !key) {
+    throw new Error('Cosmos DB 配置缺失');
+  }
+
+  if (!cosmosClient) {
+    cosmosClient = new CosmosClient({ endpoint, key });
+  }
+
+  const database = cosmosClient.database(databaseId);
+  container = database.container(containerId);
+  return container;
+}
 
 // 初始化 Firebase Admin (仅初始化一次)
 if (!admin.apps.length) {
