@@ -281,14 +281,27 @@ module.exports = async function (context, req) {
     if (error.message === 'Cosmos DB 配置缺失') {
       context.res = {
         status: 503,
-        body: { error: '数据库未配置，请在 local.settings.json 中设置 COSMOS_ENDPOINT 和 COSMOS_KEY' }
+        body: {
+          error: '数据库未配置',
+          message: '请在 Azure 配置中设置 COSMOS_ENDPOINT 和 COSMOS_KEY',
+          hasEndpoint: !!process.env.COSMOS_ENDPOINT,
+          hasKey: !!process.env.COSMOS_KEY
+        }
       };
       return;
     }
 
     context.res = {
       status: 500,
-      body: { error: '服务器错误' }
+      body: {
+        error: '服务器错误',
+        message: error.message,
+        code: error.code,
+        hasCosmosEndpoint: !!process.env.COSMOS_ENDPOINT,
+        hasCosmosKey: !!process.env.COSMOS_KEY,
+        databaseId,
+        containerId
+      }
     };
   }
 };
