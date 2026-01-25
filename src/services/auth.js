@@ -228,8 +228,22 @@ export const getAccessToken = async () => {
       // 检查 Token 算法 (HS256 是模拟器 Token，生产环境不可用)
       const header = JSON.parse(atob(token.split('.')[0]));
       if (header.alg === 'HS256') {
-        console.error('[Auth] Detected Emulator Token (HS256) in production. Forcing logout.');
+        console.error('[Auth] Detected Emulator Token (HS256) in production. Forcing logout and clearing all auth data.');
         await signOut(auth);
+        // 清除所有 Firebase 相关的 IndexedDB 数据
+        try {
+          const databases = await indexedDB.databases();
+          for (const db of databases) {
+            if (db.name && db.name.includes('firebase')) {
+              indexedDB.deleteDatabase(db.name);
+              console.log('[Auth] Deleted IndexedDB:', db.name);
+            }
+          }
+        } catch (e) {
+          console.warn('[Auth] Could not clear IndexedDB:', e);
+        }
+        // 强制刷新页面以确保清理生效
+        window.location.reload();
         return null;
       }
 
