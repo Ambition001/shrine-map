@@ -35,6 +35,8 @@ const redirectResultPromise = (isDev && !authEnabled)
   ? Promise.resolve(null)
   : (async () => {
     console.log('[Auth] Module init: calling getRedirectResult...');
+    console.log('[Auth] Current URL:', window.location.href);
+    console.log('[Auth] Auth domain:', auth.config?.authDomain);
     try {
       const result = await getRedirectResult(auth);
       console.log('[Auth] Module init: getRedirectResult returned:', result ? 'user found' : 'null');
@@ -47,9 +49,12 @@ const redirectResultPromise = (isDev && !authEnabled)
           photoURL: result.user.photoURL
         };
       }
+      // 如果 getRedirectResult 返回 null，检查是否已有登录用户
+      // （可能是 onAuthStateChanged 会处理）
+      console.log('[Auth] No redirect result, currentUser:', auth.currentUser?.email || 'null');
       return null;
     } catch (error) {
-      console.error('[Auth] Redirect result error:', error);
+      console.error('[Auth] Redirect result error:', error.code, error.message);
       return null; // 不抛出错误，避免阻塞应用
     }
   })();
@@ -141,19 +146,27 @@ const isMobile = () => {
 
 /**
  * Google 登录
- * 优先使用 popup（兼容性更好），失败时 fallback 到 redirect
+ * 移动端使用 redirect（更好的 UX），桌面端使用 popup
  */
 export const loginWithGoogle = async () => {
-  console.log('[Auth] loginWithGoogle called, isMobile:', isMobile());
+  const mobile = isMobile();
+  console.log('[Auth] loginWithGoogle called, isMobile:', mobile);
 
   if (isDev && !authEnabled) {
     console.log('[Auth] Dev mode, returning mock user');
     return MOCK_USER;
   }
 
-  // 优先尝试 popup（即使在移动端，现代浏览器也支持）
+  if (mobile) {
+    // 移动端：直接使用 redirect（避免新标签页问题）
+    console.log('[Auth] Mobile: using signInWithRedirect...');
+    await signInWithRedirect(auth, googleProvider);
+    return null; // 页面会跳转
+  }
+
+  // 桌面端：使用 popup
   try {
-    console.log('[Auth] Trying signInWithPopup...');
+    console.log('[Auth] Desktop: trying signInWithPopup...');
     const result = await signInWithPopup(auth, googleProvider);
     console.log('[Auth] Popup login successful:', result.user.email);
     return {
@@ -163,13 +176,13 @@ export const loginWithGoogle = async () => {
       photoURL: result.user.photoURL
     };
   } catch (error) {
-    // popup 被阻止或失败时，fallback 到 redirect
+    // popup 被阻止时，fallback 到 redirect
     if (error.code === 'auth/popup-blocked' ||
         error.code === 'auth/popup-closed-by-user' ||
         error.code === 'auth/cancelled-popup-request') {
       console.log('[Auth] Popup failed/blocked, falling back to redirect...', error.code);
       await signInWithRedirect(auth, googleProvider);
-      return null; // redirect 后页面会刷新
+      return null;
     }
     console.error('[Auth] Login error:', error);
     throw error;
@@ -178,17 +191,24 @@ export const loginWithGoogle = async () => {
 
 /**
  * Twitter/X 登录
- * 优先使用 popup，失败时 fallback 到 redirect
+ * 移动端使用 redirect，桌面端使用 popup
  */
 export const loginWithTwitter = async () => {
-  console.log('[Auth] loginWithTwitter called, isMobile:', isMobile());
+  const mobile = isMobile();
+  console.log('[Auth] loginWithTwitter called, isMobile:', mobile);
 
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
 
+  if (mobile) {
+    console.log('[Auth] Mobile: using signInWithRedirect...');
+    await signInWithRedirect(auth, twitterProvider);
+    return null;
+  }
+
   try {
-    console.log('[Auth] Trying signInWithPopup...');
+    console.log('[Auth] Desktop: trying signInWithPopup...');
     const result = await signInWithPopup(auth, twitterProvider);
     console.log('[Auth] Popup login successful:', result.user.email);
     return {
