@@ -30,11 +30,18 @@ async function getContainer() {
   return container;
 }
 
+// 记录 Firebase Admin 初始化状态
+let firebaseInitStatus = 'not_started';
+let firebaseInitError = null;
+
 // 初始化 Firebase Admin (仅初始化一次)
 if (!admin.apps.length) {
   try {
     let serviceAccount;
     const configStr = process.env.FIREBASE_ADMIN_CONFIG;
+
+    console.log('Firebase Admin: FIREBASE_ADMIN_CONFIG exists:', !!configStr);
+    console.log('Firebase Admin: FIREBASE_ADMIN_CONFIG length:', configStr ? configStr.length : 0);
 
     if (configStr) {
       // 尝试清理可能存在的转义字符或前后空格
@@ -42,13 +49,16 @@ if (!admin.apps.length) {
       try {
         serviceAccount = JSON.parse(sanitizedConfig);
         console.log('Firebase Admin: Successfully parsed config from env variable');
+        console.log('Firebase Admin: project_id:', serviceAccount.project_id);
       } catch (parseError) {
         console.error('Firebase Admin: JSON parse failed, trying fallback string replacement...');
         // 应对某些环境中私钥中回车符被转义的问题
         const fixedConfig = sanitizedConfig.replace(/\\n/g, '\n');
         serviceAccount = JSON.parse(fixedConfig);
+        console.log('Firebase Admin: Parsed with fallback, project_id:', serviceAccount.project_id);
       }
     } else {
+      console.log('Firebase Admin: No env config, trying local file...');
       const keyPath = path.join(__dirname, '..', 'firebase-admin-key.json');
       serviceAccount = require(keyPath);
       console.log('Firebase Admin: Initialized from local path');
@@ -58,9 +68,15 @@ if (!admin.apps.length) {
       credential: admin.credential.cert(serviceAccount),
       projectId: serviceAccount.project_id
     });
+    firebaseInitStatus = 'success';
+    console.log('Firebase Admin: Initialization SUCCESS');
   } catch (error) {
+    firebaseInitStatus = 'error';
+    firebaseInitError = error.message;
     console.error('Firebase Admin CRITICAL INITIALIZATION ERROR:', error.message);
   }
+} else {
+  firebaseInitStatus = 'already_initialized';
 }
 
 /**
@@ -185,7 +201,11 @@ module.exports = async function (context, req) {
       body: {
         error: '未授权',
         message: authResult.error,
-        debug: 'Authentication failed. Check browser network response for the message field.'
+        debug: 'Authentication failed. Check browser network response for the message field.',
+        firebaseInitStatus,
+        firebaseInitError,
+        hasFirebaseConfig: !!process.env.FIREBASE_ADMIN_CONFIG,
+        configLength: process.env.FIREBASE_ADMIN_CONFIG ? process.env.FIREBASE_ADMIN_CONFIG.length : 0
       }
     };
     return;
