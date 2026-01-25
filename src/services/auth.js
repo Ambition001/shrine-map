@@ -227,6 +227,8 @@ export const getAccessToken = async () => {
 
       // 检查 Token 算法 (HS256 是模拟器 Token，生产环境不可用)
       const header = JSON.parse(atob(token.split('.')[0]));
+      console.log('[Auth] Token header:', header);
+      console.log('[Auth] Token preview:', token.substring(0, 50) + '...');
       if (header.alg === 'HS256') {
         console.error('[Auth] Detected Emulator Token (HS256) in production. Forcing logout and clearing all auth data.');
         await signOut(auth);
