@@ -208,11 +208,30 @@ module.exports = async function (context, req) {
   const { method } = req;
   const shrineId = context.bindingData.shrineId;
 
+  // CORS headers for cross-origin requests from Firebase Hosting
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Firebase-Token',
+    'Access-Control-Max-Age': '86400'
+  };
+
+  // Handle preflight OPTIONS request
+  if (method === 'OPTIONS') {
+    context.res = {
+      status: 204,
+      headers: corsHeaders,
+      body: ''
+    };
+    return;
+  }
+
   // 验证用户身份
   const authResult = await getUserId(req, context);
   if (authResult.error) {
     context.res = {
       status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: {
         error: '未授权',
         message: authResult.error,
@@ -237,7 +256,7 @@ module.exports = async function (context, req) {
         context.log.info(`[API] Successfully fetched labels for ${userId}`);
         context.res = {
           status: 200,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           body: result
         };
         break;
@@ -246,6 +265,7 @@ module.exports = async function (context, req) {
         if (!shrineId) {
           context.res = {
             status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             body: { error: '缺少 shrineId' }
           };
           return;
@@ -253,7 +273,7 @@ module.exports = async function (context, req) {
         result = await addVisit(userId, shrineId);
         context.res = {
           status: 201,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           body: result
         };
         break;
@@ -262,6 +282,7 @@ module.exports = async function (context, req) {
         if (!shrineId) {
           context.res = {
             status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             body: { error: '缺少 shrineId' }
           };
           return;
@@ -269,7 +290,7 @@ module.exports = async function (context, req) {
         result = await removeVisit(userId, shrineId);
         context.res = {
           status: 200,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           body: result
         };
         break;
@@ -277,6 +298,7 @@ module.exports = async function (context, req) {
       default:
         context.res = {
           status: 405,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           body: { error: '方法不允许' }
         };
     }
@@ -287,6 +309,7 @@ module.exports = async function (context, req) {
     if (error.message === 'Cosmos DB 配置缺失') {
       context.res = {
         status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         body: {
           error: '数据库未配置',
           message: '请在 Azure 配置中设置 COSMOS_ENDPOINT 和 COSMOS_KEY',
@@ -299,6 +322,7 @@ module.exports = async function (context, req) {
 
     context.res = {
       status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: {
         error: '服务器错误',
         message: error.message,
