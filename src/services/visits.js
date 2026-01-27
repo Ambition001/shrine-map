@@ -1,7 +1,7 @@
 /**
- * 参拜记录服务
- * 未登录: 使用 IndexedDB 本地存储
- * 已登录: 调用 Azure Functions API
+ * Visit Records Service
+ * Not logged in: Uses IndexedDB local storage
+ * Logged in: Calls Firebase Functions API
  */
 
 import { getAccessToken, isAuthenticated } from './auth';
@@ -18,14 +18,13 @@ import {
   clearPendingOperations
 } from './storage';
 
-const STORAGE_KEY = 'visited-shrines'; // 保留用于清理旧数据
+const STORAGE_KEY = 'visited-shrines'; // Kept for cleaning up old data
 const isDev = process.env.NODE_ENV === 'development';
 const authEnabled = process.env.REACT_APP_AUTH_ENABLED === 'true';
 const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 /**
- * 构建 API 请求 headers
- * 使用 X-Firebase-Token 绕过 Azure Static Web App 的 Authorization header 干预
+ * Build API request headers
  */
 const buildAuthHeaders = (token) => ({
   'Authorization': `Bearer ${token}`,
@@ -34,8 +33,8 @@ const buildAuthHeaders = (token) => ({
 });
 
 /**
- * 初始化本地存储（IndexedDB）
- * 应用启动时调用，自动迁移 localStorage 数据
+ * Initialize local storage (IndexedDB)
+ * Called at app startup, automatically migrates localStorage data
  * @returns {Promise<{migrated: boolean, count: number}>}
  */
 export const initLocalStorage = async () => {
@@ -44,38 +43,37 @@ export const initLocalStorage = async () => {
 };
 
 /**
- * 从本地存储获取参拜记录
+ * Get visit records from local storage
  * @returns {Promise<Set<number>>}
  */
 const getFromLocal = async () => {
   try {
     return await getAllVisits();
-  } catch (error) {
-    console.error('读取 IndexedDB 失败:', error);
+  } catch {
     return new Set();
   }
 };
 
 /**
- * 获取用户所有参拜记录
+ * Get all visit records for the user
  * @returns {Promise<Set<number>>}
  */
 export const getVisits = async () => {
   const token = await getAccessToken();
 
-  // 未登录：使用 IndexedDB
+  // Not logged in: use IndexedDB
   if (!token || token === 'mock-token') {
-    // mock-token 表示开发模式未启用真实认证
+    // mock-token indicates dev mode without real auth
     if (token === 'mock-token' && isDev && !authEnabled) {
       return await getFromLocal();
     }
-    // 真正未登录的情况
+    // Actually not logged in
     if (!token) {
       return await getFromLocal();
     }
   }
 
-  // 已登录：调用 API
+  // Logged in: call API
   try {
     const response = await fetch(`${API_URL}/visits`, {
       headers: buildAuthHeaders(token)
@@ -88,40 +86,38 @@ export const getVisits = async () => {
       } catch (e) {
         errorData = { error: 'Unknown API error' };
       }
-      console.error('[API Error Details]', errorData);
-      throw new Error(`API 错误: ${response.status}${errorData.message ? ' - ' + errorData.message : ''}`);
+      throw new Error(`API error: ${response.status}${errorData.message ? ' - ' + errorData.message : ''}`);
     }
 
     const data = await response.json();
     return new Set(data.map(v => v.shrineId));
-  } catch (error) {
-    console.error('获取参拜记录失败:', error);
-    // 降级到本地存储
+  } catch {
+    // Fallback to local storage
     return await getFromLocal();
   }
 };
 
 /**
- * 添加参拜记录
+ * Add a visit record
  * @param {number} shrineId
  * @returns {Promise<Set<number>>}
  */
 export const addVisit = async (shrineId) => {
   const token = await getAccessToken();
 
-  // 未登录：保存到 IndexedDB
+  // Not logged in: save to IndexedDB
   if (!token) {
     await addVisitToDB(shrineId);
     return await getFromLocal();
   }
 
-  // 开发模式 mock token 也用本地存储
+  // Dev mode mock token also uses local storage
   if (token === 'mock-token' && isDev && !authEnabled) {
     await addVisitToDB(shrineId);
     return await getFromLocal();
   }
 
-  // 已登录：调用 API
+  // Logged in: call API
   try {
     const response = await fetch(`${API_URL}/visits/${shrineId}`, {
       method: 'POST',
@@ -129,39 +125,38 @@ export const addVisit = async (shrineId) => {
     });
 
     if (!response.ok) {
-      throw new Error(`API 错误: ${response.status}`);
+      throw new Error(`API error: ${response.status}`);
     }
 
     return await getVisits();
-  } catch (error) {
-    console.error('添加参拜记录失败:', error);
-    // 降级到本地存储
+  } catch {
+    // Fallback to local storage
     await addVisitToDB(shrineId);
     return await getFromLocal();
   }
 };
 
 /**
- * 删除参拜记录
+ * Remove a visit record
  * @param {number} shrineId
  * @returns {Promise<Set<number>>}
  */
 export const removeVisit = async (shrineId) => {
   const token = await getAccessToken();
 
-  // 未登录：从 IndexedDB 删除
+  // Not logged in: delete from IndexedDB
   if (!token) {
     await removeVisitFromDB(shrineId);
     return await getFromLocal();
   }
 
-  // 开发模式 mock token 也用本地存储
+  // Dev mode mock token also uses local storage
   if (token === 'mock-token' && isDev && !authEnabled) {
     await removeVisitFromDB(shrineId);
     return await getFromLocal();
   }
 
-  // 已登录：调用 API
+  // Logged in: call API
   try {
     const response = await fetch(`${API_URL}/visits/${shrineId}`, {
       method: 'DELETE',
@@ -169,20 +164,19 @@ export const removeVisit = async (shrineId) => {
     });
 
     if (!response.ok) {
-      throw new Error(`API 错误: ${response.status}`);
+      throw new Error(`API error: ${response.status}`);
     }
 
     return await getVisits();
-  } catch (error) {
-    console.error('删除参拜记录失败:', error);
-    // 降级到本地存储
+  } catch {
+    // Fallback to local storage
     await removeVisitFromDB(shrineId);
     return await getFromLocal();
   }
 };
 
 /**
- * 切换参拜状态
+ * Toggle visit status
  * @param {number} shrineId
  * @param {Set<number>} currentVisits
  * @returns {Promise<Set<number>>}
@@ -196,8 +190,8 @@ export const toggleVisit = async (shrineId, currentVisits) => {
 };
 
 /**
- * 合并本地数据到云端
- * 登录后调用，将本地记录同步到 DB
+ * Merge local data to cloud
+ * Called after login to sync local records to DB
  * @returns {Promise<{merged: boolean, count: number}>}
  */
 export const mergeLocalToCloud = async () => {
@@ -211,7 +205,7 @@ export const mergeLocalToCloud = async () => {
     return { merged: false, count: 0 };
   }
 
-  // 批量上传本地记录到云端
+  // Batch upload local records to cloud
   const promises = [...localVisits].map(shrineId =>
     fetch(`${API_URL}/visits/${shrineId}`, {
       method: 'POST',
@@ -221,19 +215,18 @@ export const mergeLocalToCloud = async () => {
 
   try {
     await Promise.all(promises);
-    // 清空本地存储
+    // Clear local storage
     await clearAllVisits();
-    localStorage.removeItem(STORAGE_KEY); // 确保清除旧的 localStorage
+    localStorage.removeItem(STORAGE_KEY); // Ensure old localStorage is cleared
     return { merged: true, count: localVisits.size };
-  } catch (error) {
-    console.error('合并数据失败:', error);
+  } catch {
     return { merged: false, count: 0 };
   }
 };
 
 /**
- * 获取本地存储的参拜记录数量
- * 用于 UI 显示
+ * Get count of locally stored visit records
+ * Used for UI display
  * @returns {Promise<number>}
  */
 export const getLocalVisitsCount = async () => {
@@ -242,18 +235,18 @@ export const getLocalVisitsCount = async () => {
 };
 
 /**
- * 清空本地存储（包括 visits 表和 pending 队列）
+ * Clear local storage (including visits table and pending queue)
  * @returns {Promise<void>}
  */
 export const clearLocalStorage = async () => {
   await clearAllVisits();
-  await clearPendingOperations(); // 同时清空待同步队列
+  await clearPendingOperations(); // Also clear pending sync queue
   localStorage.removeItem(STORAGE_KEY);
 };
 
 /**
- * 智能合并：根据冲突情况决定是否询问用户
- * 90% 的情况自动处理，只在真正有冲突时才需要用户决策
+ * Smart merge: Decide whether to ask user based on conflict situation
+ * 90% of cases are handled automatically, only true conflicts need user decision
  *
  * @returns {Promise<{
  *   action: 'skip' | 'use_cloud' | 'uploaded_local' | 'ask_user',
@@ -274,28 +267,28 @@ export const smartMerge = async () => {
     return { action: 'skip', reason: 'not_logged_in' };
   }
 
-  // 先检查是否有待同步的操作（离线时的操作）
-  // 如果有，先同步完成后再判断冲突
+  // First check if there are pending operations (offline operations)
+  // If so, sync them first before checking for conflicts
   const pendingOps = await getPendingOperations();
   if (pendingOps.length > 0) {
     const syncResult = await doSync(token);
 
-    // 同步完成后，如果全部成功，直接使用云端数据
-    // 注意：不清空本地 visits 表，保留作为缓存
+    // After sync, if all succeeded, use cloud data
+    // Note: Don't clear local visits table, keep as cache
     if (syncResult.failed === 0) {
       return { action: 'use_cloud', reason: 'pending_synced', count: syncResult.synced };
     }
-    // 如果有失败的，继续下面的冲突检测逻辑
+    // If some failed, continue to conflict detection logic below
   }
 
   const localVisits = await getFromLocal();
 
-  // 情况 1：本地为空 → 直接用云端
+  // Case 1: Local is empty → use cloud directly
   if (localVisits.size === 0) {
     return { action: 'use_cloud', reason: 'local_empty' };
   }
 
-  // 获取云端数据
+  // Get cloud data
   let cloudVisits;
   try {
     const response = await fetch(`${API_URL}/visits`, {
@@ -303,23 +296,22 @@ export const smartMerge = async () => {
     });
 
     if (!response.ok) {
-      throw new Error(`API 错误: ${response.status}`);
+      throw new Error(`API error: ${response.status}`);
     }
 
     const data = await response.json();
     cloudVisits = new Set(data.map(v => v.shrineId));
-  } catch (error) {
-    console.error('获取云端数据失败:', error);
+  } catch {
     return { action: 'use_local', reason: 'cloud_error' };
   }
 
-  // 情况 2：云端为空 → 直接上传本地
+  // Case 2: Cloud is empty → upload local directly
   if (cloudVisits.size === 0) {
     const result = await mergeLocalToCloud();
     return { action: 'uploaded_local', reason: 'cloud_empty', count: result.count };
   }
 
-  // 情况 3：完全相同 → 用云端（清空本地）
+  // Case 3: Identical → use cloud (clear local)
   const localArray = [...localVisits].sort((a, b) => a - b);
   const cloudArray = [...cloudVisits].sort((a, b) => a - b);
   if (JSON.stringify(localArray) === JSON.stringify(cloudArray)) {
@@ -327,21 +319,21 @@ export const smartMerge = async () => {
     return { action: 'use_cloud', reason: 'identical' };
   }
 
-  // 情况 4：本地是云端的子集 → 用云端
+  // Case 4: Local is subset of cloud → use cloud
   const isLocalSubset = [...localVisits].every(id => cloudVisits.has(id));
   if (isLocalSubset) {
     await clearLocalStorage();
     return { action: 'use_cloud', reason: 'local_subset' };
   }
 
-  // 情况 5：云端是本地的子集 → 上传本地
+  // Case 5: Cloud is subset of local → upload local
   const isCloudSubset = [...cloudVisits].every(id => localVisits.has(id));
   if (isCloudSubset) {
     const result = await mergeLocalToCloud();
     return { action: 'uploaded_local', reason: 'cloud_subset', count: result.count };
   }
 
-  // 情况 6：有真正的冲突 → 需要询问用户
+  // Case 6: True conflict → need to ask user
   const onlyLocal = [...localVisits].filter(id => !cloudVisits.has(id));
   const onlyCloud = [...cloudVisits].filter(id => !localVisits.has(id));
   const common = [...localVisits].filter(id => cloudVisits.has(id));
@@ -360,9 +352,9 @@ export const smartMerge = async () => {
 };
 
 /**
- * 用本地数据完全覆盖云端
- * 删除云端独有的记录，上传本地数据
- * @param {number[]} onlyCloudIds - 云端独有的 shrineId 列表（需要删除）
+ * Replace cloud data with local data
+ * Delete cloud-only records, upload local data
+ * @param {number[]} onlyCloudIds - List of shrineIds only in cloud (to be deleted)
  * @returns {Promise<{replaced: boolean, uploaded: number, deleted: number, finalVisits: Set<number>}>}
  */
 export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
@@ -373,7 +365,7 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
 
   const localVisits = await getFromLocal();
 
-  // 1. 删除云端独有的记录
+  // 1. Delete cloud-only records
   if (onlyCloudIds.length > 0) {
     const deletePromises = onlyCloudIds.map(shrineId =>
       fetch(`${API_URL}/visits/${shrineId}`, {
@@ -384,13 +376,12 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
 
     try {
       await Promise.all(deletePromises);
-    } catch (error) {
-      console.error('删除云端记录失败:', error);
+    } catch {
       return { replaced: false, uploaded: 0, deleted: 0, finalVisits: new Set() };
     }
   }
 
-  // 2. 上传本地所有记录（云端会自动去重）
+  // 2. Upload all local records (cloud will auto-dedupe)
   if (localVisits.size > 0) {
     const uploadPromises = [...localVisits].map(shrineId =>
       fetch(`${API_URL}/visits/${shrineId}`, {
@@ -401,16 +392,15 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
 
     try {
       await Promise.all(uploadPromises);
-    } catch (error) {
-      console.error('上传本地记录失败:', error);
+    } catch {
       return { replaced: false, uploaded: 0, deleted: onlyCloudIds.length, finalVisits: new Set() };
     }
   }
 
-  // 3. 清空本地存储
+  // 3. Clear local storage
   await clearLocalStorage();
 
-  // 4. 直接返回本地数据作为最终结果（避免 Cosmos DB 一致性延迟问题）
+  // 4. Return local data as final result (avoid Cosmos DB consistency delay)
   return {
     replaced: true,
     uploaded: localVisits.size,
@@ -420,22 +410,19 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
 };
 
 /**
- * 合并所有数据（本地 + 云端）
- * 用于冲突时用户选择"全部合并"
- * @returns {Promise<{merged: boolean, count: number}>}
+ * Merge all data (local + cloud)
+ * Used when user chooses "merge all" during conflict
+ * @returns {Promise<{merged: boolean, count: number, finalVisits: Set<number>}>}
  */
 export const mergeAll = async () => {
   const token = await getAccessToken();
   if (!token || token === 'mock-token') {
-    return { merged: false, count: 0 };
+    return { merged: false, count: 0, finalVisits: new Set() };
   }
 
   const localVisits = await getFromLocal();
-  if (localVisits.size === 0) {
-    return { merged: false, count: 0 };
-  }
 
-  // 获取云端数据
+  // Get cloud data
   let cloudVisits;
   try {
     const response = await fetch(`${API_URL}/visits`, {
@@ -443,80 +430,96 @@ export const mergeAll = async () => {
     });
     const data = await response.json();
     cloudVisits = new Set(data.map(v => v.shrineId));
-  } catch (error) {
-    console.error('获取云端数据失败:', error);
-    return { merged: false, count: 0 };
+  } catch {
+    return { merged: false, count: 0, finalVisits: new Set() };
   }
 
-  // 只上传本地有但云端没有的
+  // Calculate merged set (local + cloud)
+  const mergedVisits = new Set([...localVisits, ...cloudVisits]);
+
+  // When local is empty, return cloud data directly
+  if (localVisits.size === 0) {
+    return { merged: true, count: 0, finalVisits: mergedVisits };
+  }
+
+  // Only upload items in local but not in cloud
   const onlyLocal = [...localVisits].filter(id => !cloudVisits.has(id));
 
   if (onlyLocal.length === 0) {
     await clearLocalStorage();
-    return { merged: true, count: 0 };
+    return { merged: true, count: 0, finalVisits: mergedVisits };
   }
 
-  // 上传本地独有的记录
-  const promises = onlyLocal.map(shrineId =>
-    fetch(`${API_URL}/visits/${shrineId}`, {
-      method: 'POST',
-      headers: buildAuthHeaders(token)
+  // Upload local-only records
+  const results = await Promise.all(
+    onlyLocal.map(async (shrineId) => {
+      try {
+        const response = await fetch(`${API_URL}/visits/${shrineId}`, {
+          method: 'POST',
+          headers: buildAuthHeaders(token)
+        });
+        return { shrineId, success: response.ok };
+      } catch {
+        return { shrineId, success: false };
+      }
     })
   );
 
-  try {
-    await Promise.all(promises);
-    await clearLocalStorage();
-    return { merged: true, count: onlyLocal.length };
-  } catch (error) {
-    console.error('合并数据失败:', error);
-    return { merged: false, count: 0 };
+  const successCount = results.filter(r => r.success).length;
+  const failedCount = results.filter(r => !r.success).length;
+
+  if (failedCount > 0) {
+    // Even if partially failed, return merged data (for correct UI), but keep local data for retry
+    return { merged: false, count: successCount, finalVisits: mergedVisits };
   }
+
+  await clearLocalStorage();
+  return { merged: true, count: onlyLocal.length, finalVisits: mergedVisits };
 };
 
 // ============================================
-// 本地优先 + 后台同步（Offline-First）
+// Local-First + Background Sync (Offline-First)
 // ============================================
 
-// 同步锁，防止并发同步
+// Sync lock to prevent concurrent syncing
 let isSyncing = false;
 
 /**
- * 智能添加待同步操作（去重/合并）
- * 避免快速切换时产生冗余操作，如 [add 101, remove 101, add 101]
- * @param {'add' | 'remove'} action - 操作类型
- * @param {number} shrineId - 神社 ID
+ * Smart add pending operation (dedup/merge)
+ * Avoid redundant operations from rapid toggling, e.g. [add 101, remove 101, add 101]
+ * @param {'add' | 'remove'} action - Operation type
+ * @param {number} shrineId - Shrine ID
  */
 const addPendingOperationSmart = async (action, shrineId) => {
   const pendingOps = await getPendingOperations();
 
-  // 查找是否有针对同一 shrineId 的待处理操作
+  // Find existing operations for the same shrineId
   const existingOps = pendingOps.filter(op => op.shrineId === shrineId);
 
   if (existingOps.length > 0) {
-    // 获取最后一个操作
+    // Get the last operation
     const lastOp = existingOps[existingOps.length - 1];
 
-    // 如果最后一个操作与当前操作相同，跳过（已经在队列中）
+    // If last operation is same as current, skip (already in queue)
     if (lastOp.action === action) {
       return;
     }
 
-    // 如果最后一个操作与当前操作相反，删除所有该 shrineId 的操作（相互抵消）
-    // 例如：队列中有 add 101，现在要 remove 101 → 两个都删除
+    // If last operation is opposite of current, delete all operations for this shrineId (they cancel out)
+    // e.g.: queue has add 101, now want remove 101 → delete both
     for (const op of existingOps) {
       await removePendingOperation(op.id);
     }
     return;
   }
 
-  // 没有现有操作，正常添加
+  // No existing operation, add normally
   await addPendingOperation(action, shrineId);
 };
 
 /**
- * 执行待处理操作的同步（核心逻辑）
- * @param {string} token - 访问令牌
+ * Execute sync of pending operations (core logic)
+ * @param {string} token - Access token
  * @returns {Promise<{synced: number, failed: number}>}
  */
 const doSync = async (token) => {
@@ -534,14 +537,13 @@ const doSync = async (token) => {
       });
 
       if (response.ok || response.status === 404) {
-        // 成功，或记录不存在（删除时），移除队列
+        // Success, or record doesn't exist (on delete), remove from queue
         await removePendingOperation(op.id);
         synced++;
       } else {
         failed++;
       }
-    } catch (error) {
-      console.error('同步操作失败:', op, error);
+    } catch {
       failed++;
     }
   }
@@ -550,13 +552,13 @@ const doSync = async (token) => {
 };
 
 /**
- * 后台同步待处理操作到云端
- * 不阻塞调用方，异步执行
+ * Background sync pending operations to cloud
+ * Non-blocking, runs asynchronously
  */
 export const syncPendingOperations = async () => {
   if (isSyncing) return;
 
-  // 离线时不尝试同步
+  // Don't try to sync when offline
   if (!navigator.onLine) {
     return;
   }
@@ -576,68 +578,68 @@ export const syncPendingOperations = async () => {
 };
 
 /**
- * 添加参拜记录（本地优先）
- * 立即写入本地 IndexedDB，然后后台同步到云端
+ * Add visit record (local-first)
+ * Immediately write to local IndexedDB, then sync to cloud in background
  * @param {number} shrineId
  * @returns {Promise<Set<number>>}
  */
 export const addVisitOptimistic = async (shrineId) => {
-  // 1. 立即写入本地 IndexedDB
+  // 1. Immediately write to local IndexedDB
   await addVisitToDB(shrineId);
 
-  // 2. 检查是否需要同步云端
-  // 开发模式且未启用认证时，不需要同步
+  // 2. Check if cloud sync is needed
+  // Dev mode without auth enabled doesn't need sync
   if (isDev && !authEnabled) {
     return await getFromLocal();
   }
 
-  // 3. 检查用户是否已登录（使用本地缓存状态，离线时也能正确判断）
+  // 3. Check if user is logged in (using local cached state, works offline too)
   if (!isAuthenticated()) {
-    // 未登录，只用本地存储
+    // Not logged in, only use local storage
     return await getFromLocal();
   }
 
-  // 4. 已登录用户：添加到待同步队列（智能去重）
+  // 4. Logged in user: add to pending sync queue (smart dedup)
   await addPendingOperationSmart('add', shrineId);
 
-  // 5. 触发后台同步（不阻塞，离线时会失败但队列保留）
+  // 5. Trigger background sync (non-blocking, will fail offline but queue preserved)
   syncPendingOperations();
 
-  // 6. 立即返回本地数据
+  // 6. Immediately return local data
   return await getFromLocal();
 };
 
 /**
- * 删除参拜记录（本地优先）
+ * Remove visit record (local-first)
  * @param {number} shrineId
  * @returns {Promise<Set<number>>}
  */
 export const removeVisitOptimistic = async (shrineId) => {
-  // 1. 立即从本地删除
+  // 1. Immediately delete from local
   await removeVisitFromDB(shrineId);
 
-  // 2. 检查是否需要同步云端
+  // 2. Check if cloud sync is needed
   if (isDev && !authEnabled) {
     return await getFromLocal();
   }
 
-  // 3. 检查用户是否已登录
+  // 3. Check if user is logged in
   if (!isAuthenticated()) {
     return await getFromLocal();
   }
 
-  // 4. 已登录用户：添加到待同步队列（智能去重）
+  // 4. Logged in user: add to pending sync queue (smart dedup)
   await addPendingOperationSmart('remove', shrineId);
 
-  // 5. 触发后台同步
+  // 5. Trigger background sync
   syncPendingOperations();
 
-  // 6. 返回本地数据
+  // 6. Return local data
   return await getFromLocal();
 };
 
 /**
- * 切换参拜状态（本地优先版本）
+ * Toggle visit status (local-first version)
  * @param {number} shrineId
  * @param {Set<number>} currentVisits
  * @returns {Promise<Set<number>>}
@@ -651,7 +653,7 @@ export const toggleVisitOptimistic = async (shrineId, currentVisits) => {
 };
 
 /**
- * 获取待同步操作数量
+ * Get count of pending sync operations
  * @returns {Promise<number>}
  */
 export const getPendingCount = async () => {
@@ -660,7 +662,7 @@ export const getPendingCount = async () => {
 };
 
 /**
- * 清空待同步队列（登录/登出时使用）
+ * Clear pending sync queue (used on login/logout)
  */
 export const clearPendingQueue = async () => {
   await clearPendingOperations();

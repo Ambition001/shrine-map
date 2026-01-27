@@ -1,5 +1,5 @@
 /**
- * Firebase 配置和初始化
+ * Firebase Configuration and Initialization
  */
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, TwitterAuthProvider } from 'firebase/auth';
@@ -14,24 +14,16 @@ const firebaseConfig = {
   measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
-// 调试：检查配置是否正确加载
-console.log('[Firebase] Config check:', {
-  hasApiKey: !!firebaseConfig.apiKey,
-  hasAuthDomain: !!firebaseConfig.authDomain,
-  hasProjectId: !!firebaseConfig.projectId,
-  projectId: firebaseConfig.projectId
-});
-
-// 初始化 Firebase
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// 导出 Auth 实例
+// Export Auth instance
 export const auth = getAuth(app);
 
-// 导出 Google 登录提供者
+// Export Google auth provider
 export const googleProvider = new GoogleAuthProvider();
 
-// 导出 Twitter/X 登录提供者
+// Export Twitter/X auth provider
 export const twitterProvider = new TwitterAuthProvider();
 
 export default app;

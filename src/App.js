@@ -120,10 +120,7 @@ const ShrineMapApp = () => {
   // 初始化 IndexedDB（应用启动时）
   useEffect(() => {
     const init = async () => {
-      const result = await initLocalStorage();
-      if (result.migrated) {
-        console.log(`已从 localStorage 迁移 ${result.count} 条记录到 IndexedDB`);
-      }
+      await initLocalStorage();
       // 触发一次后台同步，处理之前未完成的操作
       syncPendingOperations();
     };
@@ -132,10 +129,7 @@ const ShrineMapApp = () => {
 
   // 监听网络恢复，自动重试同步
   useEffect(() => {
-    const handleOnline = () => {
-      console.log('网络恢复，开始同步...');
-      syncPendingOperations();
-    };
+    const handleOnline = () => syncPendingOperations();
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
   }, []);
@@ -148,17 +142,15 @@ const ShrineMapApp = () => {
     let isMounted = true;
 
     const initAuth = async () => {
-      console.log('[Auth] initAuth started');
       // 1. 先处理登录重定向结果（从 Google/Twitter 登录页面返回后）
       try {
         const redirectUser = await handleRedirectResult();
         if (redirectUser && isMounted) {
-          console.log('[Auth] Redirect results applied:', redirectUser.email);
           setUser(redirectUser);
           // 这里不需要重复调用 smartMerge，因为下方的 onAuthChange 会捕捉到用户变化
         }
-      } catch (error) {
-        console.error('[Auth] Redirect result processing failed:', error);
+      } catch {
+        // ignore redirect errors
       }
 
       // 2. 然后设置认证状态监听器
@@ -166,8 +158,6 @@ const ShrineMapApp = () => {
 
       authUnsubscribe = onAuthChange(async (currentUser) => {
         if (!isMounted) return;
-
-        console.log('[Auth] State change detected:', currentUser ? currentUser.email : 'null');
 
         // 检测是否是新登录（之前没用户，现在有用户）
         const isNewLogin = !previousUser && currentUser;
@@ -178,12 +168,10 @@ const ShrineMapApp = () => {
 
         // 用户刚登录时，使用智能合并
         if (isNewLogin) {
-          console.log('[Auth] New login detected, initiating smartMerge');
           const mergeResult = await smartMerge();
-          // ... 剩下的逻辑保持不变 ...
           switch (mergeResult.action) {
             case 'use_cloud': break;
-            case 'use_local': console.warn('云端 API 不可用，使用本地数据'); break;
+            case 'use_local': break;
             case 'pending_synced':
               if (mergeResult.count > 0) {
                 setSyncMessage(`${mergeResult.count}件の記録を同期しました`);
@@ -222,7 +210,6 @@ const ShrineMapApp = () => {
     return () => {
       isMounted = false;
       if (authUnsubscribe) {
-        console.log('[Auth] Cleaning up auth listener');
         authUnsubscribe();
       }
     };
@@ -240,8 +227,8 @@ const ShrineMapApp = () => {
       try {
         const visits = await getVisits();
         setVisitedShrines(visits);
-      } catch (error) {
-        console.error('加载参拜记录失败:', error);
+      } catch {
+        // ignore load errors
       } finally {
         setLoading(false);
       }
@@ -418,8 +405,7 @@ const ShrineMapApp = () => {
       }
 
       // 后台写入本地存储并同步云端（不阻塞 UI）
-      toggleVisitOptimistic(shrineId, prev).catch(error => {
-        console.error('切换参拜状态失败:', error);
+      toggleVisitOptimistic(shrineId, prev).catch(() => {
         // 显示错误提示
         if (!navigator.onLine) {
           setSyncError('オフラインです。オンラインになったら自動的に同期されます。');
@@ -457,8 +443,8 @@ const ShrineMapApp = () => {
     try {
       await loginFn();
       // 注意：signInWithRedirect 会导致页面跳转，代码不会执行到这里
-    } catch (error) {
-      console.error('登录失败:', error);
+    } catch {
+      // ignore login errors
     }
   };
 
@@ -471,8 +457,8 @@ const ShrineMapApp = () => {
       await firebaseLogout();
       // 清空内存中的状态
       setVisitedShrines(new Set());
-    } catch (error) {
-      console.error('登出失败:', error);
+    } catch {
+      // ignore logout errors
     }
   };
 
@@ -483,10 +469,13 @@ const ShrineMapApp = () => {
     if (result.merged) {
       setSyncMessage(`${result.count}件の記録を合併しました`);
       setTimeout(() => setSyncMessage(null), 3000);
+      // 直接使用返回的合并数据，避免 Cosmos DB 一致性延迟
+      setVisitedShrines(result.finalVisits);
+    } else {
+      // 合并失败时，重新从云端获取
+      const visits = await getVisits();
+      setVisitedShrines(visits);
     }
-    // 重新加载数据
-    const visits = await getVisits();
-    setVisitedShrines(visits);
   };
 
   // 使用云端数据（丢弃本地）

@@ -17,11 +17,6 @@
             ]
         }
     ],
-    "globalHeaders": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, DELETE, PUT, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Firebase-Token"
-    },
     "mimeTypes": {
         ".json": "application/json"
     }

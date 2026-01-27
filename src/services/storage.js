@@ -1,18 +1,18 @@
 /**
- * IndexedDB 本地存储服务
- * 替代 localStorage，支持更大容量和更丰富的数据结构
+ * IndexedDB Local Storage Service
+ * Replaces localStorage, supports larger capacity and richer data structures
  */
 
 const DB_NAME = 'shrine-map-db';
-const DB_VERSION = 2; // 升级版本以添加 pending-operations store
+const DB_VERSION = 2; // Version upgrade to add pending-operations store
 const STORE_NAME = 'visits';
-const PENDING_STORE = 'pending-operations'; // 待同步操作队列
+const PENDING_STORE = 'pending-operations'; // Pending sync operations queue
 const STORAGE_KEY = 'visited-shrines'; // localStorage key for migration
 
 let db = null;
 
 /**
- * 初始化数据库
+ * Initialize database
  * @returns {Promise<IDBDatabase>}
  */
 export const initDB = () => {
@@ -34,13 +34,13 @@ export const initDB = () => {
     request.onupgradeneeded = (event) => {
       const database = event.target.result;
 
-      // 创建 visits 存储
+      // Create visits store
       if (!database.objectStoreNames.contains(STORE_NAME)) {
         const store = database.createObjectStore(STORE_NAME, { keyPath: 'shrineId' });
         store.createIndex('visitedAt', 'visitedAt', { unique: false });
       }
 
-      // 创建待同步操作队列（v2 新增）
+      // Create pending operations queue (added in v2)
       if (!database.objectStoreNames.contains(PENDING_STORE)) {
         database.createObjectStore(PENDING_STORE, { keyPath: 'id', autoIncrement: true });
       }
@@ -49,7 +49,7 @@ export const initDB = () => {
 };
 
 /**
- * 获取所有参拜记录
+ * Get all visit records
  * @returns {Promise<Set<number>>}
  */
 export const getAllVisits = async () => {
@@ -69,7 +69,7 @@ export const getAllVisits = async () => {
 };
 
 /**
- * 添加参拜记录
+ * Add a visit record
  * @param {number} shrineId
  * @returns {Promise<void>}
  */
@@ -90,7 +90,7 @@ export const addVisitToDB = async (shrineId) => {
 };
 
 /**
- * 删除参拜记录
+ * Remove a visit record
  * @param {number} shrineId
  * @returns {Promise<void>}
  */
@@ -108,7 +108,7 @@ export const removeVisitFromDB = async (shrineId) => {
 };
 
 /**
- * 清空所有记录
+ * Clear all records
  * @returns {Promise<void>}
  */
 export const clearAllVisits = async () => {
@@ -125,7 +125,7 @@ export const clearAllVisits = async () => {
 };
 
 /**
- * 批量添加参拜记录
+ * Bulk add visit records
  * @param {number[]} shrineIds
  * @returns {Promise<void>}
  */
@@ -151,7 +151,7 @@ export const bulkAddVisits = async (shrineIds) => {
 };
 
 /**
- * 迁移 localStorage 数据到 IndexedDB
+ * Migrate localStorage data to IndexedDB
  * @returns {Promise<{migrated: boolean, count: number}>}
  */
 export const migrateFromLocalStorage = async () => {
@@ -166,17 +166,14 @@ export const migrateFromLocalStorage = async () => {
 
     await bulkAddVisits(shrineIds);
     localStorage.removeItem(STORAGE_KEY);
-
-    console.log(`IndexedDB 迁移完成: ${shrineIds.length} 条记录`);
     return { migrated: true, count: shrineIds.length };
-  } catch (error) {
-    console.error('迁移 localStorage 数据失败:', error);
+  } catch {
     return { migrated: false, count: 0 };
   }
 };
 
 /**
- * 检查是否有待迁移的 localStorage 数据
+ * Check if there is localStorage data to migrate
  * @returns {boolean}
  */
 export const hasLocalStorageData = () => {
@@ -191,14 +188,14 @@ export const hasLocalStorageData = () => {
 };
 
 // ============================================
-// 待同步操作队列（Pending Operations）
+// Pending Operations Queue
 // ============================================
 
 /**
- * 添加待同步操作到队列
- * @param {'add' | 'remove'} action - 操作类型
- * @param {number} shrineId - 神社 ID
- * @returns {Promise<number>} 返回操作 ID
+ * Add pending operation to queue
+ * @param {'add' | 'remove'} action - Operation type
+ * @param {number} shrineId - Shrine ID
+ * @returns {Promise<number>} Returns operation ID
  */
 export const addPendingOperation = async (action, shrineId) => {
   if (!db) await initDB();
@@ -218,7 +215,7 @@ export const addPendingOperation = async (action, shrineId) => {
 };
 
 /**
- * 获取所有待同步操作
+ * Get all pending operations
  * @returns {Promise<Array<{id: number, action: string, shrineId: number, createdAt: string}>>}
  */
 export const getPendingOperations = async () => {
@@ -235,8 +232,8 @@ export const getPendingOperations = async () => {
 };
 
 /**
- * 删除已同步的操作
- * @param {number} id - 操作 ID
+ * Remove synced operation
+ * @param {number} id - Operation ID
  * @returns {Promise<void>}
  */
 export const removePendingOperation = async (id) => {
@@ -253,7 +250,7 @@ export const removePendingOperation = async (id) => {
 };
 
 /**
- * 清空所有待同步操作
+ * Clear all pending operations
  * @returns {Promise<void>}
  */
 export const clearPendingOperations = async () => {
