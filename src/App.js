@@ -1,10 +1,37 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useClerk, useUser } from '@clerk/clerk-react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MapPin, Check, X, List, Map, LogIn, LogOut, User, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import shrineData from './data/shrines.json';
 import { getVisits, toggleVisitOptimistic, initLocalStorage, smartMerge, mergeAll, clearLocalStorage, replaceCloudWithLocal, syncPendingOperations } from './services/visits';
-import { onAuthChange, loginWithGoogle, loginWithTwitter, logout as firebaseLogout, handleRedirectResult } from './services/auth';
+import { onAuthChange, loginWithGoogle, logout as clerkLogout, handleRedirectResult, _setClerkInstance, _notifyAuthChange } from './services/auth';
+
+// ClerkBridge: Connects Clerk hooks to auth.js module
+function ClerkBridge() {
+  const clerk = useClerk();
+  const { user, isLoaded } = useUser();
+
+  useEffect(() => {
+    _setClerkInstance(clerk);
+  }, [clerk]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (user) {
+      _notifyAuthChange({
+        id: user.id,
+        name: user.fullName || user.firstName || 'User',
+        email: user.primaryEmailAddress?.emailAddress,
+        photoURL: user.imageUrl
+      }, true);
+    } else {
+      _notifyAuthChange(null, true);
+    }
+  }, [user, isLoaded]);
+
+  return null;
+}
 
 // Mapbox token from environment variable
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
@@ -33,7 +60,6 @@ const ShrineMapApp = () => {
   const [syncMessage, setSyncMessage] = useState(null); // 同步提示消息
   const [mergeDialog, setMergeDialog] = useState(null); // 合并确认对话框 { localCount, onMerge, onDiscard }
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight); // 真实视口高度
-  const [showLoginMenu, setShowLoginMenu] = useState(false); // 登录方式选择菜单
   const [collapsedRegions, setCollapsedRegions] = useState(new Set()); // 折叠的区域
   const [collapsedPrefectures, setCollapsedPrefectures] = useState(new Set()); // 折叠的县
   const [showMapChoice, setShowMapChoice] = useState(false); // 地图选择菜单
@@ -87,14 +113,6 @@ const ShrineMapApp = () => {
     };
   }, []);
 
-  // 点击外部关闭登录菜单
-  useEffect(() => {
-    const handleClickOutside = () => setShowLoginMenu(false);
-    if (showLoginMenu) {
-      document.addEventListener('click', handleClickOutside);
-    }
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, [showLoginMenu]);
 
   // 生成 GeoJSON 数据
   const generateGeoJSON = useCallback((visited) => {
@@ -438,11 +456,10 @@ const ShrineMapApp = () => {
     setViewMode('map');
   };
 
-  // 登录处理（使用重定向方式，页面会跳转）
-  const handleLogin = async (loginFn) => {
+  // 登录处理（打开 Clerk 登录弹窗）
+  const handleLogin = async () => {
     try {
-      await loginFn();
-      // 注意：signInWithRedirect 会导致页面跳转，代码不会执行到这里
+      await loginWithGoogle(); // Opens Clerk sign-in modal
     } catch {
       // ignore login errors
     }
@@ -454,7 +471,7 @@ const ShrineMapApp = () => {
       // 清空所有本地数据（包括 visits 表和待同步队列）
       // 确保登出后不会残留任何该账户的数据
       await clearLocalStorage();
-      await firebaseLogout();
+      await clerkLogout();
       // 清空内存中的状态
       setVisitedShrines(new Set());
     } catch {
@@ -569,6 +586,7 @@ const ShrineMapApp = () => {
 
   return (
     <div className="flex flex-col bg-gray-50" style={{ height: viewportHeight }}>
+      <ClerkBridge />
       {/* 合并确认对话框（只在真正冲突时显示） */}
       {mergeDialog && mergeDialog.type === 'conflict' && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -668,40 +686,13 @@ const ShrineMapApp = () => {
               </button>
             </div>
           ) : (
-            <div className="relative">
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowLoginMenu(!showLoginMenu); }}
-                className="text-sm bg-white text-red-600 hover:bg-gray-100 px-3 py-1.5 rounded-lg flex items-center gap-2 font-medium"
-              >
-                <LogIn size={16} />
-                ログイン
-              </button>
-              {showLoginMenu && (
-                <div className="absolute right-0 mt-1 bg-white rounded-lg shadow-xl border py-1 min-w-[160px] z-50">
-                  <button
-                    onClick={() => { handleLogin(loginWithGoogle); setShowLoginMenu(false); }}
-                    className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center gap-2 text-sm"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                    </svg>
-                    Google
-                  </button>
-                  <button
-                    onClick={() => { handleLogin(loginWithTwitter); setShowLoginMenu(false); }}
-                    className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center gap-2 text-sm"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path fill="#000" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                    X (Twitter)
-                  </button>
-                </div>
-              )}
-            </div>
+            <button
+              onClick={handleLogin}
+              className="text-sm bg-white text-red-600 hover:bg-gray-100 px-3 py-1.5 rounded-lg flex items-center gap-2 font-medium"
+            >
+              <LogIn size={16} />
+              ログイン
+            </button>
           )}
         </div>
         <div className="flex gap-4 text-sm">

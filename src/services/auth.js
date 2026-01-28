@@ -1,59 +1,47 @@
 /**
- * Authentication Service
- * Uses Firebase Auth + Google/Twitter login
- * Desktop uses popup, mobile uses redirect
+ * Authentication Service - Clerk Implementation
  */
-import {
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-  signOut,
-  onAuthStateChanged,
-  browserLocalPersistence,
-  setPersistence
-} from 'firebase/auth';
-import { auth, googleProvider, twitterProvider } from './firebase';
-
-// Ensure localStorage persistence so state is restored after redirect
-setPersistence(auth, browserLocalPersistence).catch(() => {});
 
 const isDev = process.env.NODE_ENV === 'development';
 const authEnabled = process.env.REACT_APP_AUTH_ENABLED === 'true';
 
-// Mock user (dev mode without auth enabled)
+// Mock user for dev mode without auth
 const MOCK_USER = {
   id: 'dev-user-123',
   name: 'Dev User',
   email: 'dev@example.com'
 };
 
-// Call getRedirectResult immediately on module load (runs once)
-// This gets the result before React StrictMode remounts components
-const redirectResultPromise = (isDev && !authEnabled)
-  ? Promise.resolve(null)
-  : (async () => {
-    try {
-      const result = await getRedirectResult(auth);
-      if (result) {
-        return {
-          id: result.user.uid,
-          name: result.user.displayName,
-          email: result.user.email,
-          photoURL: result.user.photoURL
-        };
-      }
-      return null;
-    } catch {
-      return null; // Don't throw error, avoid blocking the app
-    }
-  })();
+// Clerk instance reference (set from React component via ClerkBridge)
+let _clerk = null;
+let _user = null;
+let _isLoaded = false;
+let _authChangeCallbacks = [];
+
+/**
+ * Set Clerk instance (called from ClerkBridge component)
+ * @internal
+ */
+export const _setClerkInstance = (clerk) => {
+  _clerk = clerk;
+};
+
+/**
+ * Notify auth state change (called from ClerkBridge component)
+ * @internal
+ */
+export const _notifyAuthChange = (user, isLoaded) => {
+  _user = user;
+  _isLoaded = isLoaded;
+  _authChangeCallbacks.forEach(cb => cb(user));
+};
 
 /**
  * Get login redirect result
- * Returns the result already obtained during module initialization
+ * Not needed for Clerk (handles redirects internally)
  */
 export const handleRedirectResult = () => {
-  return redirectResultPromise;
+  return Promise.resolve(null);
 };
 
 /**
@@ -64,21 +52,20 @@ export const handleRedirectResult = () => {
 export const onAuthChange = (callback) => {
   if (isDev && !authEnabled) {
     callback(MOCK_USER);
-    return () => { };
+    return () => {};
   }
 
-  return onAuthStateChanged(auth, (firebaseUser) => {
-    if (firebaseUser) {
-      callback({
-        id: firebaseUser.uid,
-        name: firebaseUser.displayName,
-        email: firebaseUser.email,
-        photoURL: firebaseUser.photoURL
-      });
-    } else {
-      callback(null);
-    }
-  });
+  _authChangeCallbacks.push(callback);
+
+  // If already loaded, call immediately with current state
+  if (_isLoaded) {
+    callback(_user);
+  }
+
+  // Return unsubscribe function
+  return () => {
+    _authChangeCallbacks = _authChangeCallbacks.filter(cb => cb !== callback);
+  };
 };
 
 /**
@@ -89,17 +76,7 @@ export const getCurrentUser = () => {
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
-
-  const firebaseUser = auth.currentUser;
-  if (firebaseUser) {
-    return {
-      id: firebaseUser.uid,
-      name: firebaseUser.displayName,
-      email: firebaseUser.email,
-      photoURL: firebaseUser.photoURL
-    };
-  }
-  return null;
+  return _user;
 };
 
 /**
@@ -110,60 +87,31 @@ export const isAuthenticated = () => {
   if (isDev && !authEnabled) {
     return true;
   }
-  return auth.currentUser !== null;
+  return _user !== null;
 };
 
 /**
- * Detect if device is mobile
- */
-const isMobile = () => {
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-};
-
-/**
- * Google login
- * Desktop uses popup, mobile uses redirect (Firebase Hosting supported)
+ * Google login - Opens Clerk sign-in modal
  */
 export const loginWithGoogle = async () => {
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
 
-  if (isMobile()) {
-    await signInWithRedirect(auth, googleProvider);
-    return null;
-  }
-
-  const result = await signInWithPopup(auth, googleProvider);
-  return {
-    id: result.user.uid,
-    name: result.user.displayName,
-    email: result.user.email,
-    photoURL: result.user.photoURL
-  };
+  _clerk?.openSignIn();
+  return null;
 };
 
 /**
- * Twitter/X login
- * Desktop uses popup, mobile uses redirect
+ * Twitter/X login - Opens Clerk sign-in modal
  */
 export const loginWithTwitter = async () => {
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
 
-  if (isMobile()) {
-    await signInWithRedirect(auth, twitterProvider);
-    return null;
-  }
-
-  const result = await signInWithPopup(auth, twitterProvider);
-  return {
-    id: result.user.uid,
-    name: result.user.displayName,
-    email: result.user.email,
-    photoURL: result.user.photoURL
-  };
+  _clerk?.openSignIn();
+  return null;
 };
 
 /**
@@ -174,7 +122,7 @@ export const logout = async () => {
   if (isDev && !authEnabled) {
     return;
   }
-  await signOut(auth);
+  await _clerk?.signOut();
 };
 
 /**
@@ -186,34 +134,10 @@ export const getAccessToken = async () => {
     return 'mock-token';
   }
 
-  const user = auth.currentUser;
-  if (user) {
-    try {
-      const token = await user.getIdToken(true);
-
-      // Check token algorithm (HS256 is emulator token, not usable in production)
-      const header = JSON.parse(atob(token.split('.')[0]));
-      if (header.alg === 'HS256') {
-        await signOut(auth);
-        // Clear all Firebase-related IndexedDB data
-        try {
-          const databases = await indexedDB.databases();
-          for (const db of databases) {
-            if (db.name && db.name.includes('firebase')) {
-              indexedDB.deleteDatabase(db.name);
-            }
-          }
-        } catch {
-          // ignore
-        }
-        window.location.reload();
-        return null;
-      }
-
-      return token;
-    } catch {
-      return null;
-    }
+  try {
+    const token = await _clerk?.session?.getToken();
+    return token || null;
+  } catch {
+    return null;
   }
-  return null;
 };

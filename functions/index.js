@@ -1,14 +1,12 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
-const admin = require('firebase-admin');
+const { createClerkClient } = require('@clerk/backend');
 const { CosmosClient } = require('@azure/cosmos');
 
 // Define secrets
 const cosmosEndpoint = defineSecret('COSMOS_ENDPOINT');
 const cosmosKey = defineSecret('COSMOS_KEY');
-
-// Initialize Firebase Admin
-admin.initializeApp();
+const clerkSecretKey = defineSecret('CLERK_SECRET_KEY');
 
 // Cosmos DB configuration
 let container = null;
@@ -37,9 +35,9 @@ async function getContainer(endpoint, key) {
 }
 
 /**
- * Verify Firebase ID Token
+ * Verify Clerk JWT Token
  */
-async function verifyToken(req) {
+async function verifyToken(req, secretKey) {
   const authHeader = req.headers.authorization || '';
 
   if (!authHeader.startsWith('Bearer ')) {
@@ -58,8 +56,9 @@ async function verifyToken(req) {
   }
 
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    return { userId: decodedToken.uid };
+    const clerk = createClerkClient({ secretKey });
+    const { sub } = await clerk.verifyToken(token);
+    return { userId: sub };
   } catch (error) {
     return { error: error.message };
   }
@@ -121,16 +120,17 @@ async function removeVisit(userId, shrineId, endpoint, key) {
  */
 exports.visits = onRequest(
   {
-    secrets: [cosmosEndpoint, cosmosKey],
+    secrets: [cosmosEndpoint, cosmosKey, clerkSecretKey],
     maxInstances: 10  // Limit concurrent instances to cap costs
   },
   async (req, res) => {
     // Get secrets
     const endpoint = cosmosEndpoint.value();
     const key = cosmosKey.value();
+    const clerkSecret = clerkSecretKey.value();
 
     // Verify user identity
-    const authResult = await verifyToken(req);
+    const authResult = await verifyToken(req, clerkSecret);
     if (authResult.error) {
       return res.status(401).json({
         error: 'Unauthorized',

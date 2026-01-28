@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "firebase": "^12.8.0",
+    "@clerk/clerk-react": "^5.60.0",
     "lucide-react": "^0.562.0",
     "mapbox-gl": "^3.18.0",
     "react": "^19.2.3",
