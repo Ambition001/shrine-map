@@ -150,7 +150,11 @@ module.exports = async function (context, req) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: {
         error: 'Unauthorized',
-        message: authResult.error
+        message: authResult.error,
+        debug: {
+          hasClerkSecret: !!process.env.CLERK_SECRET_KEY,
+          hasAuthHeader: !!(req.headers.authorization || req.headers.Authorization)
+        }
       }
     };
     return;
