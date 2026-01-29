@@ -148,6 +148,11 @@ module.exports = async function (context, req) {
   // Verify user identity
   const authResult = await verifyClerkToken(req, context);
   if (authResult.error) {
+    // Get token for debugging
+    const authHeader = req.headers.authorization || req.headers.Authorization || '';
+    const token = authHeader.replace('Bearer ', '');
+    const tokenPreview = token ? token.substring(0, 50) + '...' : 'empty';
+
     context.res = {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -156,7 +161,9 @@ module.exports = async function (context, req) {
         message: authResult.error,
         debug: {
           hasClerkSecret: !!process.env.CLERK_SECRET_KEY,
-          hasAuthHeader: !!(req.headers.authorization || req.headers.Authorization)
+          hasAuthHeader: !!(req.headers.authorization || req.headers.Authorization),
+          tokenPreview,
+          tokenLength: token ? token.length : 0
         }
       }
     };
