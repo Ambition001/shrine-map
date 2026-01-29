@@ -578,15 +578,17 @@ const ShrineMapApp = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="text-gray-600">読み込み中...</div>
-      </div>
+      <>
+        <ClerkBridge />
+        <div className="flex items-center justify-center h-screen bg-gray-50">
+          <div className="text-gray-600">読み込み中...</div>
+        </div>
+      </>
     );
   }
 
   return (
     <div className="flex flex-col bg-gray-50" style={{ height: viewportHeight }}>
-      <ClerkBridge />
       {/* 合并确认对话框（只在真正冲突时显示） */}
       {mergeDialog && mergeDialog.type === 'conflict' && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
