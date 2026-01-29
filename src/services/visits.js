@@ -25,9 +25,10 @@ const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 /**
  * Build API request headers
+ * Use X-Clerk-Token to bypass Azure SWA's Authorization header interception
  */
 const buildAuthHeaders = (token) => ({
-  'Authorization': `Bearer ${token}`,
+  'X-Clerk-Token': token,
   'Content-Type': 'application/json'
 });
 

@@ -33,13 +33,8 @@ async function getContainer() {
  * Verify Clerk JWT Token
  */
 async function verifyClerkToken(req, context) {
-  const authHeader = req.headers.authorization || req.headers.Authorization || '';
-
-  if (!authHeader.startsWith('Bearer ')) {
-    return { error: 'Missing or invalid Authorization header' };
-  }
-
-  const token = authHeader.split('Bearer ')[1];
+  // Use X-Clerk-Token header to bypass Azure SWA's Authorization header interception
+  const token = req.headers['x-clerk-token'];
 
   if (!token || token === 'null') {
     return { error: 'Token is empty' };
@@ -131,7 +126,7 @@ module.exports = async function (context, req) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Clerk-Token',
     'Access-Control-Max-Age': '86400'
   };
 
