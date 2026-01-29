@@ -418,6 +418,16 @@ const ShrineMapApp = () => {
     }
   }, [mapLoaded, visitedShrines, generateGeoJSON]);
 
+  // 当UI布局变化（如关闭登录提示）时，调整地图大小
+  useEffect(() => {
+    if (map.current) {
+      // 给予少量延迟以确保 DOM 布局已更新
+      setTimeout(() => {
+        map.current.resize();
+      }, 100);
+    }
+  }, [showLoginPrompt, viewMode]);
+
   // 切换参拜状态（乐观更新：先更新 UI，再写入本地/同步云端）
   const toggleVisited = useCallback(async (shrineId) => {
     // 使用函数式更新避免 Race Condition
