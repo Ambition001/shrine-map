@@ -17,6 +17,7 @@ let _clerk = null;
 let _user = null;
 let _isLoaded = false;
 let _authChangeCallbacks = [];
+let _getToken = null; // getToken function from useAuth()
 
 /**
  * Set Clerk instance (called from ClerkBridge component)
@@ -24,6 +25,14 @@ let _authChangeCallbacks = [];
  */
 export const _setClerkInstance = (clerk) => {
   _clerk = clerk;
+};
+
+/**
+ * Set getToken function (called from ClerkBridge component)
+ * @internal
+ */
+export const _setGetToken = (getTokenFn) => {
+  _getToken = getTokenFn;
 };
 
 /**
@@ -135,8 +144,12 @@ export const getAccessToken = async () => {
   }
 
   try {
-    const token = await _clerk?.session?.getToken();
-    return token || null;
+    // Use getToken from useAuth() hook (passed via ClerkBridge)
+    if (_getToken) {
+      const token = await _getToken();
+      return token || null;
+    }
+    return null;
   } catch {
     return null;
   }

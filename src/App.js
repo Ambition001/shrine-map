@@ -1,20 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useClerk, useUser } from '@clerk/clerk-react';
+import { useClerk, useUser, useAuth } from '@clerk/clerk-react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MapPin, Check, X, List, Map, LogIn, LogOut, User, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import shrineData from './data/shrines.json';
 import { getVisits, toggleVisitOptimistic, initLocalStorage, smartMerge, mergeAll, clearLocalStorage, replaceCloudWithLocal, syncPendingOperations } from './services/visits';
-import { onAuthChange, loginWithGoogle, logout as clerkLogout, handleRedirectResult, _setClerkInstance, _notifyAuthChange } from './services/auth';
+import { onAuthChange, loginWithGoogle, logout as clerkLogout, handleRedirectResult, _setClerkInstance, _notifyAuthChange, _setGetToken } from './services/auth';
 
 // ClerkBridge: Connects Clerk hooks to auth.js module
 function ClerkBridge() {
   const clerk = useClerk();
   const { user, isLoaded } = useUser();
+  const { getToken } = useAuth();
 
   useEffect(() => {
     _setClerkInstance(clerk);
   }, [clerk]);
+
+  useEffect(() => {
+    // Pass getToken function to auth.js
+    _setGetToken(getToken);
+  }, [getToken]);
 
   useEffect(() => {
     if (!isLoaded) return;
