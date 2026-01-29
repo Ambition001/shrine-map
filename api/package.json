@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "@azure/cosmos": "^4.0.0",
-    "firebase-admin": "^13.6.0"
+    "@clerk/backend": "^1.0.0"
   }
 }
