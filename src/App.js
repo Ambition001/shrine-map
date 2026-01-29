@@ -652,12 +652,13 @@ const ShrineMapApp = () => {
         </div>
       )}
 
-      {/* 未登录提示 */}
-      {!user && !authLoading && (
-        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-sm text-yellow-800 text-center">
-          ログインすると記録をクラウドに保存できます
-        </div>
-      )}
+      {/* 未登录提示 - user requested to remove this
+656:       {!user && !authLoading && (
+657:         <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-sm text-yellow-800 text-center">
+658:           ログインすると記録をクラウドに保存できます
+659:         </div>
+660:       )}
+661:       */}
 
       {/* 同步错误提示 */}
       {syncError && (
