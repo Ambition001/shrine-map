@@ -54,7 +54,7 @@ async function verifyClerkToken(req, context) {
   try {
     const verifiedToken = await verifyToken(token, {
       secretKey,
-      authorizedParties: ['https://ichinomiyamap.com', 'http://localhost:3000']
+      authorizedParties: ['https://ichinomiyamap.com', 'https://www.ichinomiyamap.com', 'http://localhost:3000']
     });
     context.log.info(`[Auth] Token verified for user: ${verifiedToken.sub}`);
     return { userId: verifiedToken.sub };
