@@ -69,7 +69,8 @@ const ShrineMapApp = () => {
   const [collapsedRegions, setCollapsedRegions] = useState(new Set()); // 折叠的区域
   const [collapsedPrefectures, setCollapsedPrefectures] = useState(new Set()); // 折叠的县
   const [showMapChoice, setShowMapChoice] = useState(false); // 地图选择菜单
-  const [syncError, setSyncError] = useState(null); // 同步错误消息
+  const [syncError, setSyncError] = useState(null);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(true); // 同步错误消息
   const [isOnline, setIsOnline] = useState(navigator.onLine); // 网络状态
 
   // 监听视口高度变化（处理移动端地址栏）
@@ -652,13 +653,18 @@ const ShrineMapApp = () => {
         </div>
       )}
 
-      {/* 未登录提示 - user requested to remove this
-656:       {!user && !authLoading && (
-657:         <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-sm text-yellow-800 text-center">
-658:           ログインすると記録をクラウドに保存できます
-659:         </div>
-660:       )}
-661:       */}
+      {/* 未登录提示 - 可关闭 */}
+      {!user && !authLoading && showLoginPrompt && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-sm text-yellow-800 text-center relative">
+          <span>ログインすると記録をクラウドに保存できます</span>
+          <button
+            onClick={() => setShowLoginPrompt(false)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-yellow-600 hover:text-yellow-800 p-1"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* 同步错误提示 */}
       {syncError && (
