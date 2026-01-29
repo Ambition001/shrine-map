@@ -1,6 +1,6 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
-const { createClerkClient } = require('@clerk/backend');
+const { verifyToken } = require('@clerk/backend');
 const { CosmosClient } = require('@azure/cosmos');
 
 // Define secrets
@@ -37,7 +37,7 @@ async function getContainer(endpoint, key) {
 /**
  * Verify Clerk JWT Token
  */
-async function verifyToken(req, secretKey) {
+async function verifyClerkToken(req, secretKey) {
   const authHeader = req.headers.authorization || '';
 
   if (!authHeader.startsWith('Bearer ')) {
@@ -56,9 +56,8 @@ async function verifyToken(req, secretKey) {
   }
 
   try {
-    const clerk = createClerkClient({ secretKey });
-    const { sub } = await clerk.verifyToken(token);
-    return { userId: sub };
+    const verifiedToken = await verifyToken(token, { secretKey });
+    return { userId: verifiedToken.sub };
   } catch (error) {
     return { error: error.message };
   }
@@ -130,7 +129,7 @@ exports.visits = onRequest(
     const clerkSecret = clerkSecretKey.value();
 
     // Verify user identity
-    const authResult = await verifyToken(req, clerkSecret);
+    const authResult = await verifyClerkToken(req, clerkSecret);
     if (authResult.error) {
       return res.status(401).json({
         error: 'Unauthorized',
