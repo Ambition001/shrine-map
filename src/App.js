@@ -557,7 +557,7 @@ const ShrineMapApp = () => {
   }, {});
 
   // 地区排序顺序
-  const regionOrder = ['北海道・東北', '関東', '甲信越', '東海', '近畿', '中国', '四国', '九州・沖縄'];
+  const regionOrder = ['北海道・東北', '関東', '北陸', '東海', '近畿', '中国・四国', '九州・沖縄'];
 
   // 按顺序获取地区列表
   const sortedRegions = regionOrder.filter(r => shrinesByRegionAndPrefecture[r]);

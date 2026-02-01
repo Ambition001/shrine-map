@@ -71,7 +71,7 @@ shrine-map/
 {
   "id": 1,
   "name": "吉備津神社",
-  "region": "中国",
+  "region": "中国・四国",
   "reading": "きびつじんじゃ",
   "province": "備後国",
   "prefecture": "広島県",
