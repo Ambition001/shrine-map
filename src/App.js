@@ -42,12 +42,6 @@ function ClerkBridge() {
 // Mapbox token from environment variable
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
 
-// 默认全图视图（日本全境）
-const DEFAULT_VIEW = {
-  center: [138.5, 36.5],
-  zoom: 5.5
-};
-
 const ShrineMapApp = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
@@ -261,18 +255,10 @@ const ShrineMapApp = () => {
     loadVisits();
   }, [user, authLoading]);
 
-  // 关闭弹窗并回到日本全图
+  // 关闭弹窗（保持当前地图位置）
   const closeSelectedShrine = useCallback(() => {
     setSelectedShrine(null);
     selectedShrineRef.current = null;
-    // 回到日本全图，而不是上次位置
-    if (map.current) {
-      map.current.flyTo({
-        center: DEFAULT_VIEW.center,
-        zoom: DEFAULT_VIEW.zoom,
-        duration: 800
-      });
-    }
     previousView.current = null;
   }, []);
 
@@ -792,6 +778,11 @@ const ShrineMapApp = () => {
                 <h3 className="text-lg font-bold text-gray-900">{selectedShrine.name}</h3>
                 <p className="text-xs text-gray-500">{selectedShrine.reading}</p>
                 <p className="text-sm text-gray-600">{selectedShrine.province} ・ {selectedShrine.prefecture}</p>
+                {selectedShrine.goshuinHours && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">御朱印受付:</span> {selectedShrine.goshuinHours}
+                  </p>
+                )}
               </div>
               <button
                 onClick={closeSelectedShrine}
