@@ -105,6 +105,16 @@ const verifySession = async (req, context) => {
   }
 
   try {
+    // For header-based auth, SuperTokens looks for the token in different places
+    // Build a headers object that includes both Authorization and st-access-token
+    const accessToken = authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : parsedCookies['st-access-token'] || parsedCookies['sAccessToken'];
+
+    if (context && context.log) {
+      context.log('Access token extracted:', accessToken ? `present (${accessToken.substring(0, 30)}...)` : 'missing');
+    }
+
     // Create a request/response wrapper for SuperTokens
     // SuperTokens requires: getMethod, getCookieValue, getHeaderValue, getOriginalURL
     const requestWrapper = {
@@ -113,9 +123,22 @@ const verifySession = async (req, context) => {
       },
       getHeaderValue: (name) => {
         // SuperTokens may request headers with different cases
-        const value = req.headers[name] || req.headers[name.toLowerCase()];
-        if (context && context.log && (name.toLowerCase() === 'authorization' || name.toLowerCase().startsWith('st-'))) {
-          context.log(`getHeaderValue(${name}):`, value ? `present (${value.substring(0, 30)}...)` : 'missing');
+        const lowerName = name.toLowerCase();
+
+        // For authorization header, return the original
+        if (lowerName === 'authorization') {
+          return authHeader || undefined;
+        }
+
+        // For st-access-token, return from cookie if header is missing
+        if (lowerName === 'st-access-token' && !req.headers['st-access-token']) {
+          // SuperTokens might look for this header in header-based auth mode
+          return accessToken || undefined;
+        }
+
+        const value = req.headers[name] || req.headers[lowerName];
+        if (context && context.log && (lowerName === 'authorization' || lowerName.startsWith('st-'))) {
+          context.log(`getHeaderValue(${name}):`, value ? `present (${String(value).substring(0, 30)}...)` : 'missing');
         }
         return value || undefined;
       },
