@@ -103,31 +103,41 @@ const verifySession = async (req, context) => {
 
   try {
     // Create a request/response wrapper for SuperTokens
-    // SuperTokens expects getHeaderValue (not getHeader)
-    const session = await Session.getSession(
-      {
-        getHeaderValue: (name) => {
-          // SuperTokens may request headers with different cases
-          const value = req.headers[name] || req.headers[name.toLowerCase()];
-          if (context && context.log && (name.toLowerCase() === 'authorization' || name.toLowerCase().startsWith('st-'))) {
-            context.log(`getHeaderValue(${name}):`, value ? 'present' : 'missing');
-          }
-          return value || undefined;
-        },
-        getCookieValue: (key) => {
-          const value = parsedCookies[key];
-          if (context && context.log) {
-            context.log(`getCookieValue(${key}):`, value ? 'present' : 'missing');
-          }
-          return value;
+    // SuperTokens requires: getMethod, getCookieValue, getHeaderValue, getOriginalURL
+    const requestWrapper = {
+      getMethod: () => {
+        return req.method.toLowerCase();
+      },
+      getHeaderValue: (name) => {
+        // SuperTokens may request headers with different cases
+        const value = req.headers[name] || req.headers[name.toLowerCase()];
+        if (context && context.log && (name.toLowerCase() === 'authorization' || name.toLowerCase().startsWith('st-'))) {
+          context.log(`getHeaderValue(${name}):`, value ? 'present' : 'missing');
         }
+        return value || undefined;
       },
-      {
-        setHeader: () => {},
-        setCookie: () => {},
-        removeHeader: () => {},
-        removeCookie: () => {}
+      getCookieValue: (key) => {
+        const value = parsedCookies[key];
+        if (context && context.log) {
+          context.log(`getCookieValue(${key}):`, value ? 'present' : 'missing');
+        }
+        return value;
       },
+      getOriginalURL: () => {
+        return req.url || '/';
+      }
+    };
+
+    const responseWrapper = {
+      setHeader: () => {},
+      setCookie: () => {},
+      removeHeader: () => {},
+      removeCookie: () => {}
+    };
+
+    const session = await Session.getSession(
+      requestWrapper,
+      responseWrapper,
       { sessionRequired: true }
     );
 
