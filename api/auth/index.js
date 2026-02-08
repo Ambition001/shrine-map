@@ -2,8 +2,7 @@
  * SuperTokens Auth Endpoints for Azure Functions
  * Handles all /api/auth/* routes
  */
-const supertokens = require('supertokens-node');
-const { middleware } = require('supertokens-node/framework/custom');
+const { middleware, PreParsedRequest, CollectingResponse } = require('supertokens-node/framework/custom');
 const { initSuperTokens } = require('../supertokens');
 
 // CORS headers
@@ -16,13 +15,63 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400'
 };
 
+/**
+ * Parse cookies from cookie header string
+ */
+function parseCookies(cookieHeader) {
+  const cookies = {};
+  if (cookieHeader) {
+    cookieHeader.split(';').forEach(cookie => {
+      const [name, ...rest] = cookie.trim().split('=');
+      if (name && rest.length > 0) {
+        cookies[name] = rest.join('=');
+      }
+    });
+  }
+  return cookies;
+}
+
+/**
+ * Parse query string from URL
+ */
+function parseQuery(url) {
+  const query = {};
+  const queryStart = url.indexOf('?');
+  if (queryStart !== -1) {
+    const queryString = url.substring(queryStart + 1);
+    queryString.split('&').forEach(param => {
+      const [key, value] = param.split('=');
+      if (key) {
+        query[key] = decodeURIComponent(value || '');
+      }
+    });
+  }
+  return query;
+}
+
+/**
+ * Create a Headers-like object that SuperTokens expects
+ */
+class HeadersWrapper {
+  constructor(headers) {
+    this._headers = {};
+    // Normalize header keys to lowercase
+    for (const [key, value] of Object.entries(headers || {})) {
+      this._headers[key.toLowerCase()] = value;
+    }
+  }
+
+  get(key) {
+    return this._headers[key.toLowerCase()] || null;
+  }
+}
+
 module.exports = async function (context, req) {
   context.log('Auth request:', req.method, req.url);
 
   try {
     // Initialize SuperTokens
     initSuperTokens();
-    context.log('SuperTokens initialized');
   } catch (initError) {
     context.log.error('SuperTokens init error:', initError);
     context.res = {
@@ -46,92 +95,74 @@ module.exports = async function (context, req) {
   }
 
   try {
-    // Create request/response wrappers for SuperTokens middleware
-    const request = {
-      method: req.method,
+    // Create request object matching SuperTokens PreParsedRequest expectations
+    const requestInfo = {
       url: req.url,
-      headers: req.headers,
-      body: req.body,
-      getHeader: (name) => req.headers[name.toLowerCase()],
-      getOriginalURL: () => req.url,
-      getFormData: async () => req.body,
-      getJSONBody: async () => req.body,
-      getCookieValue: (key) => {
-        const cookies = (req.headers['cookie'] || '').split(';').reduce((acc, cookie) => {
-          const [name, value] = cookie.trim().split('=');
-          if (name && value) acc[name] = value;
-          return acc;
-        }, {});
-        return cookies[key];
-      }
+      method: req.method,
+      headers: new HeadersWrapper(req.headers),
+      cookies: parseCookies(req.headers['cookie']),
+      query: parseQuery(req.url),
+      getJSONBody: async () => req.body || {},
+      getFormBody: async () => req.body || {}
     };
 
-    let responseBody = null;
-    let responseStatus = 200;
-    let responseHeaders = { ...corsHeaders };
+    // Create a CollectingResponse to capture SuperTokens' response
+    const stResponse = new CollectingResponse();
 
-    // Track headers set by SuperTokens to ensure they're exposed
-    const superTokensHeaders = [];
-
-    const response = {
-      setHeader: (name, value) => {
-        responseHeaders[name] = value;
-        // Track headers that SuperTokens sets so we can expose them
-        if (!superTokensHeaders.includes(name.toLowerCase())) {
-          superTokensHeaders.push(name.toLowerCase());
-        }
-      },
-      setCookie: (key, value, domain, secure, httpOnly, expires, path, sameSite) => {
-        const cookieStr = `${key}=${value}; Path=${path}; ${secure ? 'Secure;' : ''} ${httpOnly ? 'HttpOnly;' : ''} SameSite=${sameSite}${expires ? `; Expires=${expires.toUTCString()}` : ''}`;
-        if (!responseHeaders['Set-Cookie']) {
-          responseHeaders['Set-Cookie'] = [];
-        }
-        if (Array.isArray(responseHeaders['Set-Cookie'])) {
-          responseHeaders['Set-Cookie'].push(cookieStr);
-        } else {
-          responseHeaders['Set-Cookie'] = [responseHeaders['Set-Cookie'], cookieStr];
-        }
-      },
-      setStatusCode: (code) => {
-        responseStatus = code;
-      },
-      sendJSONResponse: (content) => {
-        responseBody = content;
-        responseHeaders['Content-Type'] = 'application/json';
-      },
-      sendHTMLResponse: (html) => {
-        responseBody = html;
-        responseHeaders['Content-Type'] = 'text/html';
-      }
-    };
-
-    // Use SuperTokens middleware
+    // Use SuperTokens middleware with PreParsedRequest wrapper
     context.log('Calling SuperTokens middleware for:', req.url);
-    const middlewareResult = await middleware()(request, response);
-    context.log('Middleware result:', middlewareResult, 'Status:', responseStatus, 'Body:', JSON.stringify(responseBody), 'SuperTokens headers:', superTokensHeaders);
+    const result = await middleware(
+      (req) => new PreParsedRequest(req),
+      (res) => res
+    )(requestInfo, stResponse);
 
-    if (middlewareResult) {
-      // Dynamically update Access-Control-Expose-Headers to include all headers set by SuperTokens
-      if (superTokensHeaders.length > 0) {
-        const existingExpose = responseHeaders['Access-Control-Expose-Headers'] || '';
-        const existingHeaders = existingExpose.split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
-        const allHeaders = [...new Set([...existingHeaders, ...superTokensHeaders])];
-        responseHeaders['Access-Control-Expose-Headers'] = allHeaders.join(', ');
+    context.log('Middleware result:', JSON.stringify(result));
+    context.log('Response status:', stResponse.statusCode);
+    context.log('Response body:', stResponse.body);
+
+    if (result.handled) {
+      // Build response headers from CollectingResponse
+      const responseHeaders = { ...corsHeaders };
+
+      // Copy headers from SuperTokens response
+      const stHeaders = stResponse.headers;
+      if (stHeaders && stHeaders.forEach) {
+        stHeaders.forEach((value, key) => {
+          responseHeaders[key] = value;
+        });
+      } else if (stHeaders && stHeaders.entries) {
+        for (const [key, value] of stHeaders.entries()) {
+          responseHeaders[key] = value;
+        }
       }
 
-      context.log('Final response - Status:', responseStatus, 'Headers:', JSON.stringify(responseHeaders));
+      // Build Set-Cookie headers from cookies array
+      if (stResponse.cookies && stResponse.cookies.length > 0) {
+        responseHeaders['Set-Cookie'] = stResponse.cookies.map(cookie => {
+          let cookieStr = `${cookie.key}=${cookie.value}`;
+          if (cookie.path) cookieStr += `; Path=${cookie.path}`;
+          if (cookie.domain) cookieStr += `; Domain=${cookie.domain}`;
+          if (cookie.secure) cookieStr += '; Secure';
+          if (cookie.httpOnly) cookieStr += '; HttpOnly';
+          if (cookie.sameSite) cookieStr += `; SameSite=${cookie.sameSite}`;
+          if (cookie.expires) cookieStr += `; Expires=${new Date(cookie.expires).toUTCString()}`;
+          return cookieStr;
+        });
+      }
+
+      context.log('Final response headers:', JSON.stringify(responseHeaders));
 
       context.res = {
-        status: responseStatus,
+        status: stResponse.statusCode,
         headers: responseHeaders,
-        body: responseBody
+        body: stResponse.body
       };
     } else {
       // Route not handled by SuperTokens
       context.res = {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        body: { error: 'Not found' }
+        body: JSON.stringify({ error: 'Not found' })
       };
     }
   } catch (error) {
