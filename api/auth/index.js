@@ -106,7 +106,9 @@ module.exports = async function (context, req) {
     };
 
     // Use SuperTokens middleware
+    context.log('Calling SuperTokens middleware for:', req.url);
     const middlewareResult = await middleware()(request, response);
+    context.log('Middleware result:', middlewareResult, 'Status:', responseStatus, 'Body:', JSON.stringify(responseBody), 'SuperTokens headers:', superTokensHeaders);
 
     if (middlewareResult) {
       // Dynamically update Access-Control-Expose-Headers to include all headers set by SuperTokens
@@ -117,7 +119,7 @@ module.exports = async function (context, req) {
         responseHeaders['Access-Control-Expose-Headers'] = allHeaders.join(', ');
       }
 
-      context.log('Response headers:', JSON.stringify(responseHeaders));
+      context.log('Final response - Status:', responseStatus, 'Headers:', JSON.stringify(responseHeaders));
 
       context.res = {
         status: responseStatus,
