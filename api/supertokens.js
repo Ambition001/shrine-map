@@ -24,19 +24,26 @@ const client = jwksClient({
 });
 
 /**
+ * Decode base64url string (JWT uses base64url encoding)
+ */
+function base64UrlDecode(str) {
+  // Replace base64url characters with base64 characters
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  // Add padding if needed
+  const padding = base64.length % 4;
+  if (padding) {
+    base64 += '='.repeat(4 - padding);
+  }
+  return Buffer.from(base64, 'base64').toString('utf8');
+}
+
+/**
  * Decode JWT header to get kid
  */
 function decodeJwtHeader(token) {
-  try {
-    const headerPart = token.split('.')[0];
-    const headerJson = Buffer.from(headerPart, 'base64url').toString('utf8');
-    return JSON.parse(headerJson);
-  } catch {
-    // Fallback for environments without base64url support
-    const headerPart = token.split('.')[0];
-    const headerJson = Buffer.from(headerPart, 'base64').toString('utf8');
-    return JSON.parse(headerJson);
-  }
+  const headerPart = token.split('.')[0];
+  const headerJson = base64UrlDecode(headerPart);
+  return JSON.parse(headerJson);
 }
 
 /**
