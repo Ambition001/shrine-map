@@ -106,12 +106,13 @@ module.exports = async function (context, req) {
   const { method } = req;
   const shrineId = context.bindingData.shrineId;
 
-  // CORS headers - must allow credentials for SuperTokens cookie-based auth
+  // CORS headers - includes headers needed for header-based auth
   const corsHeaders = {
     'Access-Control-Allow-Origin': process.env.APP_WEBSITE_DOMAIN || 'https://ichinomiyamap.com',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, st-auth-mode, anti-csrf, rid, fdi-version',
+    'Access-Control-Allow-Headers': 'Content-Type, st-auth-mode, anti-csrf, rid, fdi-version, authorization, st-access-token, st-refresh-token',
     'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Expose-Headers': 'front-token, st-access-token, st-refresh-token',
     'Access-Control-Max-Age': '86400'
   };
 

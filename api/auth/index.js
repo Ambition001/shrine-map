@@ -5,13 +5,13 @@
 const { middleware, PreParsedRequest, CollectingResponse } = require('supertokens-node/framework/custom');
 const { initSuperTokens } = require('../supertokens');
 
-// CORS headers
+// CORS headers - includes headers needed for header-based auth
 const corsHeaders = {
   'Access-Control-Allow-Origin': process.env.APP_WEBSITE_DOMAIN || 'https://ichinomiyamap.com',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, st-auth-mode, anti-csrf, rid, fdi-version, authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, st-auth-mode, anti-csrf, rid, fdi-version, authorization, st-access-token, st-refresh-token',
   'Access-Control-Allow-Credentials': 'true',
-  'Access-Control-Expose-Headers': 'front-token, id-refresh-token, anti-csrf, st-access-token, st-refresh-token',
+  'Access-Control-Expose-Headers': 'front-token, id-refresh-token, anti-csrf, st-access-token, st-refresh-token, authorization',
   'Access-Control-Max-Age': '86400'
 };
 

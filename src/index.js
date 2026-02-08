@@ -23,7 +23,10 @@ SuperTokens.init({
         ]
       }
     }),
-    Session.init()
+    Session.init({
+      // Use header-based auth to avoid Azure SWA cookie issues
+      tokenTransferMethod: "header"
+    })
   ]
 });
 
