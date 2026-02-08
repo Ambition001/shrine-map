@@ -16,8 +16,21 @@ const corsHeaders = {
 };
 
 module.exports = async function (context, req) {
-  // Initialize SuperTokens
-  initSuperTokens();
+  context.log('Auth request:', req.method, req.url);
+
+  try {
+    // Initialize SuperTokens
+    initSuperTokens();
+    context.log('SuperTokens initialized');
+  } catch (initError) {
+    context.log.error('SuperTokens init error:', initError);
+    context.res = {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Init error', message: initError.message })
+    };
+    return;
+  }
 
   const { method } = req;
 
@@ -106,7 +119,7 @@ module.exports = async function (context, req) {
     context.res = {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: { error: 'Internal server error', message: error.message }
+      body: JSON.stringify({ error: 'Internal server error', message: error.message, stack: error.stack })
     };
   }
 };
