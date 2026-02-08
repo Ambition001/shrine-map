@@ -135,6 +135,37 @@ const initSuperTokens = () => {
               }
             }
           ]
+        },
+        override: {
+          functions: (originalImplementation) => {
+            return {
+              ...originalImplementation,
+              signInUp: async function (input) {
+                // Call the original implementation
+                const response = await originalImplementation.signInUp(input);
+
+                if (response.status === "OK") {
+                  // Get user info from OAuth provider
+                  const { email } = response.user.thirdParty[0] || {};
+
+                  // Try to get profile info from raw user info
+                  // Google provides name and picture in the userInfo
+                  const rawUserInfo = response.rawUserInfoFromProvider?.fromUserInfoAPI;
+                  const name = rawUserInfo?.name || rawUserInfo?.given_name || null;
+                  const picture = rawUserInfo?.picture || null;
+
+                  // Store user info in access token payload
+                  response.session?.mergeIntoAccessTokenPayload({
+                    name,
+                    email,
+                    picture
+                  });
+                }
+
+                return response;
+              }
+            };
+          }
         }
       }),
       Session.init({
