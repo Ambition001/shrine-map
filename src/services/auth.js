@@ -182,8 +182,7 @@ export const logout = async () => {
 
 /**
  * Get access token (for API calls)
- * SuperTokens handles tokens automatically via cookies
- * This function is kept for compatibility but returns a placeholder
+ * With header-based auth, we need to get the actual JWT token
  * @returns {Promise<string|null>}
  */
 export const getAccessToken = async () => {
@@ -194,9 +193,9 @@ export const getAccessToken = async () => {
   try {
     const exists = await Session.doesSessionExist();
     if (exists) {
-      // SuperTokens uses cookies, so we return a placeholder
-      // The actual token is sent automatically with credentials: 'include'
-      return 'supertokens-session';
+      // Get the actual access token for header-based auth
+      const accessToken = await Session.getAccessToken();
+      return accessToken || null;
     }
     return null;
   } catch {
