@@ -51,13 +51,30 @@ function parseQuery(url) {
 
 /**
  * Create a Headers-like object that SuperTokens expects
+ * Azure SWA replaces the Authorization header, so we need to restore it
+ * from st-access-token header or cookie
  */
 class HeadersWrapper {
-  constructor(headers) {
+  constructor(headers, cookies) {
     this._headers = {};
     // Normalize header keys to lowercase
     for (const [key, value] of Object.entries(headers || {})) {
       this._headers[key.toLowerCase()] = value;
+    }
+
+    // Azure SWA replaces the Authorization header with its own internal token.
+    // We need to restore the original SuperTokens access token.
+    // Try sources in order of preference:
+    // 1. st-access-token header (if frontend sends it explicitly)
+    // 2. st-access-token cookie (SuperTokens stores token here too)
+    let accessToken = this._headers['st-access-token'];
+
+    if (!accessToken && cookies && cookies['st-access-token']) {
+      accessToken = cookies['st-access-token'];
+    }
+
+    if (accessToken) {
+      this._headers['authorization'] = `Bearer ${accessToken}`;
     }
   }
 
@@ -106,12 +123,15 @@ module.exports = async function (context, req) {
     context.log('Full URL:', fullUrl);
     context.log('Request body:', JSON.stringify(req.body));
 
+    // Parse cookies first so we can use them for header restoration
+    const cookies = parseCookies(req.headers['cookie']);
+
     // Create request object matching SuperTokens PreParsedRequest expectations
     const requestInfo = {
       url: fullUrl,
       method: req.method,
-      headers: new HeadersWrapper(req.headers),
-      cookies: parseCookies(req.headers['cookie']),
+      headers: new HeadersWrapper(req.headers, cookies),
+      cookies: cookies,
       query: parseQuery(req.url),
       getJSONBody: async () => req.body || {},
       getFormBody: async () => req.body || {}
