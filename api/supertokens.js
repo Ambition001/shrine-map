@@ -103,13 +103,14 @@ const verifySession = async (req, context) => {
 
   try {
     // Create a request/response wrapper for SuperTokens
+    // SuperTokens expects getHeaderValue (not getHeader)
     const session = await Session.getSession(
       {
-        getHeader: (name) => {
+        getHeaderValue: (name) => {
           // SuperTokens may request headers with different cases
           const value = req.headers[name] || req.headers[name.toLowerCase()];
           if (context && context.log && (name.toLowerCase() === 'authorization' || name.toLowerCase().startsWith('st-'))) {
-            context.log(`getHeader(${name}):`, value ? 'present' : 'missing');
+            context.log(`getHeaderValue(${name}):`, value ? 'present' : 'missing');
           }
           return value || undefined;
         },
