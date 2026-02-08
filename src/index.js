@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import SuperTokens from 'supertokens-auth-react';
+import SuperTokens, { SuperTokensWrapper } from 'supertokens-auth-react';
 import ThirdParty from 'supertokens-auth-react/recipe/thirdparty';
 import Session from 'supertokens-auth-react/recipe/session';
 import './index.css';
@@ -30,6 +30,8 @@ SuperTokens.init({
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App />
+    <SuperTokensWrapper>
+      <App />
+    </SuperTokensWrapper>
   </React.StrictMode>
 );
