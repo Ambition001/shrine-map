@@ -4,9 +4,48 @@
 const supertokens = require('supertokens-node');
 const Session = require('supertokens-node/recipe/session');
 const ThirdParty = require('supertokens-node/recipe/thirdparty');
+const jwt = require('jsonwebtoken');
+const jwksClient = require('jwks-rsa');
 
 // Initialize SuperTokens (call this once at app startup)
 let isInitialized = false;
+
+// JWKS client for manual JWT verification
+// Uses the confirmed working endpoint
+const jwksUri = process.env.SUPERTOKENS_CONNECTION_URI
+  ? `${process.env.SUPERTOKENS_CONNECTION_URI}/.well-known/jwks.json`
+  : 'https://supertokens-core.blueplant-7381350f.japaneast.azurecontainerapps.io/.well-known/jwks.json';
+
+const client = jwksClient({
+  jwksUri,
+  cache: true,
+  cacheMaxEntries: 5,
+  cacheMaxAge: 600000 // 10 minutes
+});
+
+function getSigningKey(header, callback) {
+  client.getSigningKey(header.kid, (err, key) => {
+    if (err) {
+      return callback(err);
+    }
+    const signingKey = key.getPublicKey();
+    callback(null, signingKey);
+  });
+}
+
+/**
+ * Verify JWT access token using JWKS
+ */
+async function verifyAccessToken(accessToken) {
+  return new Promise((resolve, reject) => {
+    jwt.verify(accessToken, getSigningKey, { algorithms: ['RS256'] }, (err, decoded) => {
+      if (err) {
+        return reject(err);
+      }
+      resolve(decoded);
+    });
+  });
+}
 
 const initSuperTokens = () => {
   if (isInitialized) return;
@@ -67,84 +106,52 @@ const initSuperTokens = () => {
 };
 
 /**
- * Verify session from request
+ * Verify session from request using manual JWT verification
  * @param {Object} req - Azure Functions request object
  * @param {Object} context - Azure Functions context for logging
  * @returns {Promise<{userId: string} | {error: string}>}
  */
 const verifySession = async (req, context) => {
-  initSuperTokens();
+  const authHeader = req.headers['authorization'] || '';
 
   // Development mode mock token
-  const authHeader = req.headers['authorization'] || '';
-  const cookieHeader = req.headers['cookie'] || '';
-
   if (authHeader === 'Bearer mock-token') {
     return { userId: 'dev-user-123' };
   }
 
-  // Parse cookies once
-  const parsedCookies = {};
-  if (cookieHeader) {
-    cookieHeader.split(';').forEach(cookie => {
-      const [name, ...rest] = cookie.trim().split('=');
-      if (name && rest.length > 0) {
-        parsedCookies[name] = rest.join('=');
-      }
-    });
-  }
+  // Extract access token from Authorization header
+  const accessToken = authHeader.startsWith('Bearer ')
+    ? authHeader.substring(7)
+    : null;
 
-  // Log incoming auth info for debugging
   if (context && context.log) {
     context.log('Auth header present:', !!authHeader);
-    context.log('Auth header starts with Bearer:', authHeader.startsWith('Bearer '));
-    context.log('Auth header value (first 50 chars):', authHeader.substring(0, 50));
-    context.log('Cookie keys:', Object.keys(parsedCookies).join(', '));
-    context.log('All header keys:', Object.keys(req.headers).join(', '));
-    context.log('st-auth-mode:', req.headers['st-auth-mode']);
+    context.log('Access token extracted:', accessToken ? 'present' : 'missing');
+    context.log('JWKS URI:', jwksUri);
+  }
+
+  if (!accessToken) {
+    return { error: 'Unauthorized', message: 'No access token found' };
   }
 
   try {
-    // For header-based auth, extract the access token from Authorization header
-    const accessToken = authHeader.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : parsedCookies['st-access-token'] || parsedCookies['sAccessToken'];
+    // Use manual JWT verification with JWKS
+    const decoded = await verifyAccessToken(accessToken);
 
     if (context && context.log) {
-      context.log('Access token extracted:', accessToken ? `present (${accessToken.substring(0, 30)}...)` : 'missing');
+      context.log('JWT verified successfully, userId:', decoded.sub);
     }
 
-    if (!accessToken) {
-      return { error: 'Unauthorized', message: 'No access token found' };
-    }
-
-    // Use getSessionWithoutRequestResponse for serverless environments
-    // This method directly validates the access token without needing request/response wrappers
-    const session = await Session.getSessionWithoutRequestResponse(
-      accessToken,
-      undefined, // antiCsrfToken - not needed for header-based auth
-      {
-        sessionRequired: true,
-        checkDatabase: false // Don't check database for performance, just validate JWT
-      }
-    );
-
-    if (context && context.log) {
-      context.log('Session verified, userId:', session.getUserId());
-    }
-    return { userId: session.getUserId() };
+    // SuperTokens JWT uses 'sub' field for userId
+    return { userId: decoded.sub };
   } catch (error) {
     if (context && context.log) {
-      context.log.error('Session verification error:', error.type, error.message);
-      context.log.error('Error payload:', JSON.stringify(error.payload || {}));
+      context.log.error('JWT verification failed:', error.message);
       if (error.stack) {
         context.log.error('Stack:', error.stack);
       }
     }
-    if (error.type === 'UNAUTHORISED') {
-      return { error: 'Unauthorized', message: error.message };
-    }
-    return { error: error.message };
+    return { error: 'Unauthorized', message: error.message };
   }
 };
 
