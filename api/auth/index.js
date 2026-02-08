@@ -95,9 +95,20 @@ module.exports = async function (context, req) {
   }
 
   try {
+    // Get the full URL for SuperTokens
+    // Azure Functions req.url might be just the path, we need the full URL
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['host'] || 'ichinomiyamap.com';
+    const path = req.url.startsWith('http') ? new URL(req.url).pathname + (new URL(req.url).search || '') : req.url;
+    const fullUrl = `${protocol}://${host}${path}`;
+
+    context.log('Request URL:', req.url);
+    context.log('Full URL:', fullUrl);
+    context.log('Request body:', JSON.stringify(req.body));
+
     // Create request object matching SuperTokens PreParsedRequest expectations
     const requestInfo = {
-      url: req.url,
+      url: fullUrl,
       method: req.method,
       headers: new HeadersWrapper(req.headers),
       cookies: parseCookies(req.headers['cookie']),
