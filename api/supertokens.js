@@ -146,20 +146,29 @@ const initSuperTokens = () => {
 
                 if (response.status === "OK") {
                   // Get user info from OAuth provider
-                  const { email } = response.user.thirdParty[0] || {};
+                  // Google returns user info in multiple places, try all sources
+                  const rawUserInfo = response.rawUserInfoFromProvider;
 
-                  // Try to get profile info from raw user info
-                  // Google provides name and picture in the userInfo
-                  const rawUserInfo = response.rawUserInfoFromProvider?.fromUserInfoAPI;
-                  const name = rawUserInfo?.name || rawUserInfo?.given_name || null;
-                  const picture = rawUserInfo?.picture || null;
+                  // Try fromIdTokenPayload first (Google ID token contains profile info)
+                  const idTokenPayload = rawUserInfo?.fromIdTokenPayload;
+                  // Also check fromUserInfoAPI as fallback
+                  const userInfoAPI = rawUserInfo?.fromUserInfoAPI;
+
+                  // Extract profile info from available sources
+                  const name = idTokenPayload?.name || userInfoAPI?.name ||
+                               idTokenPayload?.given_name || userInfoAPI?.given_name || null;
+                  const email = idTokenPayload?.email || userInfoAPI?.email ||
+                                response.user?.emails?.[0]?.email || null;
+                  const picture = idTokenPayload?.picture || userInfoAPI?.picture || null;
 
                   // Store user info in access token payload
-                  response.session?.mergeIntoAccessTokenPayload({
-                    name,
-                    email,
-                    picture
-                  });
+                  if (response.session) {
+                    await response.session.mergeIntoAccessTokenPayload({
+                      name,
+                      email,
+                      picture
+                    });
+                  }
                 }
 
                 return response;
