@@ -161,6 +161,21 @@ const verifySession = async (req, context) => {
   }
 
   try {
+    // Log the first part of the token for debugging
+    if (context && context.log) {
+      const tokenParts = accessToken.split('.');
+      context.log('Token parts count:', tokenParts.length);
+      context.log('Token header (first 50 chars):', accessToken.substring(0, 50));
+
+      // Try to decode header
+      try {
+        const header = decodeJwtHeader(accessToken);
+        context.log('Decoded header:', JSON.stringify(header));
+      } catch (decodeErr) {
+        context.log.error('Header decode error:', decodeErr.message);
+      }
+    }
+
     // Use manual JWT verification with JWKS
     const decoded = await verifyAccessToken(accessToken);
 
