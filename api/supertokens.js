@@ -32,8 +32,8 @@ const initSuperTokens = () => {
     },
     appInfo: {
       appName: "一之宮巡礼",
-      apiDomain: process.env.API_DOMAIN || "https://ichinomiyamap.com",
-      websiteDomain: process.env.WEBSITE_DOMAIN || "https://ichinomiyamap.com",
+      apiDomain: process.env.APP_API_DOMAIN || "https://ichinomiyamap.com",
+      websiteDomain: process.env.APP_WEBSITE_DOMAIN || "https://ichinomiyamap.com",
       apiBasePath: "/api/auth",
       websiteBasePath: "/auth"
     },

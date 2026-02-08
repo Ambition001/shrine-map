@@ -108,7 +108,7 @@ module.exports = async function (context, req) {
 
   // CORS headers - must allow credentials for SuperTokens cookie-based auth
   const corsHeaders = {
-    'Access-Control-Allow-Origin': process.env.WEBSITE_DOMAIN || 'https://ichinomiyamap.com',
+    'Access-Control-Allow-Origin': process.env.APP_WEBSITE_DOMAIN || 'https://ichinomiyamap.com',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, st-auth-mode, anti-csrf, rid, fdi-version',
     'Access-Control-Allow-Credentials': 'true',
