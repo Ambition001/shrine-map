@@ -40,8 +40,8 @@ async function verifyUserSession(req, context) {
   const result = await verifySession(req, context);
 
   if (result.error) {
-    context.log.error(`[Auth] Session verification failed: ${result.error}`);
-    return { error: result.error };
+    context.log.error(`[Auth] Session verification failed: ${result.error}, message: ${result.message}`);
+    return { error: result.error, message: result.message };
   }
 
   context.log.info(`[Auth] Session verified for user: ${result.userId}`);
