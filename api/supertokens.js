@@ -56,8 +56,8 @@ const initSuperTokens = () => {
       Session.init({
         cookieSecure: true,
         cookieSameSite: "none",
-        // Support header-based auth to avoid Azure SWA cookie issues
-        getTokenTransferMethod: () => "header",
+        // Support both header and cookie auth methods
+        getTokenTransferMethod: () => "any",
         exposeAccessTokenToFrontendInCookieBasedAuth: true
       })
     ]
