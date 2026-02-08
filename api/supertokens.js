@@ -94,6 +94,13 @@ const verifySession = async (req, context) => {
     });
   }
 
+  // Log incoming auth info for debugging
+  if (context && context.log) {
+    context.log('Auth header present:', !!authHeader);
+    context.log('Auth header starts with Bearer:', authHeader.startsWith('Bearer '));
+    context.log('Cookie keys:', Object.keys(parsedCookies).join(', '));
+  }
+
   try {
     // Create a request/response wrapper for SuperTokens
     const session = await Session.getSession(
@@ -101,10 +108,17 @@ const verifySession = async (req, context) => {
         getHeader: (name) => {
           // SuperTokens may request headers with different cases
           const value = req.headers[name] || req.headers[name.toLowerCase()];
+          if (context && context.log && (name.toLowerCase() === 'authorization' || name.toLowerCase().startsWith('st-'))) {
+            context.log(`getHeader(${name}):`, value ? 'present' : 'missing');
+          }
           return value || undefined;
         },
         getCookieValue: (key) => {
-          return parsedCookies[key];
+          const value = parsedCookies[key];
+          if (context && context.log) {
+            context.log(`getCookieValue(${key}):`, value ? 'present' : 'missing');
+          }
+          return value;
         }
       },
       {
@@ -116,10 +130,16 @@ const verifySession = async (req, context) => {
       { sessionRequired: true }
     );
 
+    if (context && context.log) {
+      context.log('Session verified, userId:', session.getUserId());
+    }
     return { userId: session.getUserId() };
   } catch (error) {
     if (context && context.log) {
       context.log.error('Session verification error:', error.type, error.message);
+      if (error.stack) {
+        context.log.error('Stack:', error.stack);
+      }
     }
     if (error.type === 'UNAUTHORISED') {
       return { error: 'Unauthorized' };
