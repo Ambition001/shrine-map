@@ -25,7 +25,7 @@ const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 /**
  * Build fetch options for authenticated requests
- * Uses header-based auth with Authorization: Bearer <token>
+ * Uses st-access-token header (Azure SWA replaces Authorization header)
  * @param {string} method - HTTP method
  * @param {string|null} token - Access token from SuperTokens
  */
@@ -38,9 +38,10 @@ const buildFetchOptions = (method = 'GET', token = null) => {
     }
   };
 
-  // Add Authorization header if token is available
+  // Add st-access-token header if token is available
+  // Note: Azure SWA replaces Authorization header, so we use st-access-token instead
   if (token && token !== 'mock-token') {
-    options.headers['Authorization'] = `Bearer ${token}`;
+    options.headers['st-access-token'] = token;
   }
 
   return options;

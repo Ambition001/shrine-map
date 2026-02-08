@@ -157,6 +157,10 @@ const initSuperTokens = () => {
  * @returns {Promise<{userId: string} | {error: string}>}
  */
 const verifySession = async (req, context) => {
+  // Try multiple sources for the access token
+  // 1. st-access-token header (preferred, not modified by Azure SWA)
+  // 2. Authorization header (may be replaced by Azure SWA)
+  const stAccessToken = req.headers['st-access-token'] || '';
   const authHeader = req.headers['authorization'] || '';
 
   // Development mode mock token
@@ -164,10 +168,13 @@ const verifySession = async (req, context) => {
     return { userId: 'dev-user-123' };
   }
 
-  // Extract access token from Authorization header
-  const accessToken = authHeader.startsWith('Bearer ')
-    ? authHeader.substring(7)
-    : null;
+  // Extract access token - prefer st-access-token header
+  let accessToken = stAccessToken || null;
+
+  // Fallback to Authorization header if st-access-token is not present
+  if (!accessToken && authHeader.startsWith('Bearer ')) {
+    accessToken = authHeader.substring(7);
+  }
 
   if (context && context.log) {
     context.log('Auth header present:', !!authHeader);
