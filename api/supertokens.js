@@ -69,10 +69,10 @@ const initSuperTokens = () => {
 /**
  * Verify session from request
  * @param {Object} req - Azure Functions request object
- * @param {Object} res - Azure Functions response object
+ * @param {Object} context - Azure Functions context for logging
  * @returns {Promise<{userId: string} | {error: string}>}
  */
-const verifySession = async (req, res) => {
+const verifySession = async (req, context) => {
   initSuperTokens();
 
   // Development mode mock token
@@ -83,33 +83,44 @@ const verifySession = async (req, res) => {
     return { userId: 'dev-user-123' };
   }
 
+  // Parse cookies once
+  const parsedCookies = {};
+  if (cookieHeader) {
+    cookieHeader.split(';').forEach(cookie => {
+      const [name, ...rest] = cookie.trim().split('=');
+      if (name && rest.length > 0) {
+        parsedCookies[name] = rest.join('=');
+      }
+    });
+  }
+
   try {
     // Create a request/response wrapper for SuperTokens
     const session = await Session.getSession(
       {
-        getHeader: (name) => req.headers[name.toLowerCase()],
+        getHeader: (name) => {
+          // SuperTokens may request headers with different cases
+          const value = req.headers[name] || req.headers[name.toLowerCase()];
+          return value || undefined;
+        },
         getCookieValue: (key) => {
-          const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
-            const [name, value] = cookie.trim().split('=');
-            acc[name] = value;
-            return acc;
-          }, {});
-          return cookies[key];
+          return parsedCookies[key];
         }
       },
       {
-        setHeader: (name, value) => {
-          // Azure Functions doesn't need this for verification
-        },
-        setCookie: (key, value, domain, secure, httpOnly, expires, path, sameSite) => {
-          // Azure Functions doesn't need this for verification
-        }
+        setHeader: () => {},
+        setCookie: () => {},
+        removeHeader: () => {},
+        removeCookie: () => {}
       },
       { sessionRequired: true }
     );
 
     return { userId: session.getUserId() };
   } catch (error) {
+    if (context && context.log) {
+      context.log.error('Session verification error:', error.type, error.message);
+    }
     if (error.type === 'UNAUTHORISED') {
       return { error: 'Unauthorized' };
     }

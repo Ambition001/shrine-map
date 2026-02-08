@@ -37,7 +37,7 @@ async function verifyUserSession(req, context) {
   initSuperTokens();
 
   // Use the verifySession helper from supertokens.js
-  const result = await verifySession(req, null);
+  const result = await verifySession(req, context);
 
   if (result.error) {
     context.log.error(`[Auth] Session verification failed: ${result.error}`);
