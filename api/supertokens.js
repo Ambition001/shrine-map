@@ -41,9 +41,28 @@ function base64UrlDecode(str) {
  * Decode JWT header to get kid
  */
 function decodeJwtHeader(token) {
-  const headerPart = token.split('.')[0];
+  if (!token || typeof token !== 'string') {
+    throw new Error(`Invalid token type: ${typeof token}`);
+  }
+
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error(`Invalid JWT format: expected 3 parts, got ${parts.length}`);
+  }
+
+  const headerPart = parts[0];
+  if (!headerPart) {
+    throw new Error('Empty JWT header part');
+  }
+
   const headerJson = base64UrlDecode(headerPart);
-  return JSON.parse(headerJson);
+  const header = JSON.parse(headerJson);
+
+  if (!header || typeof header !== 'object') {
+    throw new Error(`Invalid header JSON: ${headerJson}`);
+  }
+
+  return header;
 }
 
 /**
@@ -55,7 +74,7 @@ async function verifyAccessToken(accessToken) {
   const kid = header.kid;
 
   if (!kid) {
-    throw new Error('No kid found in JWT header');
+    throw new Error(`No kid found in JWT header. Header keys: ${Object.keys(header).join(', ')}. Header: ${JSON.stringify(header)}`);
   }
 
   // Get the signing key for this kid
