@@ -98,9 +98,10 @@ const verifySession = async (req, context) => {
   if (context && context.log) {
     context.log('Auth header present:', !!authHeader);
     context.log('Auth header starts with Bearer:', authHeader.startsWith('Bearer '));
-    context.log('Auth header length:', authHeader.length);
+    context.log('Auth header value (first 50 chars):', authHeader.substring(0, 50));
     context.log('Cookie keys:', Object.keys(parsedCookies).join(', '));
     context.log('All header keys:', Object.keys(req.headers).join(', '));
+    context.log('st-auth-mode:', req.headers['st-auth-mode']);
   }
 
   try {
@@ -114,7 +115,7 @@ const verifySession = async (req, context) => {
         // SuperTokens may request headers with different cases
         const value = req.headers[name] || req.headers[name.toLowerCase()];
         if (context && context.log && (name.toLowerCase() === 'authorization' || name.toLowerCase().startsWith('st-'))) {
-          context.log(`getHeaderValue(${name}):`, value ? 'present' : 'missing');
+          context.log(`getHeaderValue(${name}):`, value ? `present (${value.substring(0, 30)}...)` : 'missing');
         }
         return value || undefined;
       },
