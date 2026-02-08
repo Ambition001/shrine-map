@@ -10,8 +10,9 @@ const { initSuperTokens } = require('../supertokens');
 const corsHeaders = {
   'Access-Control-Allow-Origin': process.env.APP_WEBSITE_DOMAIN || 'https://ichinomiyamap.com',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, st-auth-mode, anti-csrf, rid, fdi-version',
+  'Access-Control-Allow-Headers': 'Content-Type, st-auth-mode, anti-csrf, rid, fdi-version, authorization',
   'Access-Control-Allow-Credentials': 'true',
+  'Access-Control-Expose-Headers': 'front-token, id-refresh-token, anti-csrf, st-access-token, st-refresh-token',
   'Access-Control-Max-Age': '86400'
 };
 
