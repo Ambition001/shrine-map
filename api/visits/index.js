@@ -134,7 +134,7 @@ module.exports = async function (context, req) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: {
         error: 'Unauthorized',
-        message: authResult.error
+        message: authResult.message || authResult.error
       }
     };
     return;

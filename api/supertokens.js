@@ -150,12 +150,13 @@ const verifySession = async (req, context) => {
   } catch (error) {
     if (context && context.log) {
       context.log.error('Session verification error:', error.type, error.message);
+      context.log.error('Error payload:', JSON.stringify(error.payload || {}));
       if (error.stack) {
         context.log.error('Stack:', error.stack);
       }
     }
     if (error.type === 'UNAUTHORISED') {
-      return { error: 'Unauthorized' };
+      return { error: 'Unauthorized', message: error.message };
     }
     return { error: error.message };
   }
