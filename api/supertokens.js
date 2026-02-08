@@ -23,22 +23,41 @@ const client = jwksClient({
   cacheMaxAge: 600000 // 10 minutes
 });
 
-function getSigningKey(header, callback) {
-  client.getSigningKey(header.kid, (err, key) => {
-    if (err) {
-      return callback(err);
-    }
-    const signingKey = key.getPublicKey();
-    callback(null, signingKey);
-  });
+/**
+ * Decode JWT header to get kid
+ */
+function decodeJwtHeader(token) {
+  try {
+    const headerPart = token.split('.')[0];
+    const headerJson = Buffer.from(headerPart, 'base64url').toString('utf8');
+    return JSON.parse(headerJson);
+  } catch {
+    // Fallback for environments without base64url support
+    const headerPart = token.split('.')[0];
+    const headerJson = Buffer.from(headerPart, 'base64').toString('utf8');
+    return JSON.parse(headerJson);
+  }
 }
 
 /**
  * Verify JWT access token using JWKS
  */
 async function verifyAccessToken(accessToken) {
+  // First, decode the header to get the kid
+  const header = decodeJwtHeader(accessToken);
+  const kid = header.kid;
+
+  if (!kid) {
+    throw new Error('No kid found in JWT header');
+  }
+
+  // Get the signing key for this kid
+  const key = await client.getSigningKey(kid);
+  const publicKey = key.getPublicKey();
+
+  // Verify the token with the public key
   return new Promise((resolve, reject) => {
-    jwt.verify(accessToken, getSigningKey, { algorithms: ['RS256'] }, (err, decoded) => {
+    jwt.verify(accessToken, publicKey, { algorithms: ['RS256'] }, (err, decoded) => {
       if (err) {
         return reject(err);
       }
