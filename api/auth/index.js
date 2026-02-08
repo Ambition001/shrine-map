@@ -70,9 +70,16 @@ module.exports = async function (context, req) {
     let responseStatus = 200;
     let responseHeaders = { ...corsHeaders };
 
+    // Track headers set by SuperTokens to ensure they're exposed
+    const superTokensHeaders = [];
+
     const response = {
       setHeader: (name, value) => {
         responseHeaders[name] = value;
+        // Track headers that SuperTokens sets so we can expose them
+        if (!superTokensHeaders.includes(name.toLowerCase())) {
+          superTokensHeaders.push(name.toLowerCase());
+        }
       },
       setCookie: (key, value, domain, secure, httpOnly, expires, path, sameSite) => {
         const cookieStr = `${key}=${value}; Path=${path}; ${secure ? 'Secure;' : ''} ${httpOnly ? 'HttpOnly;' : ''} SameSite=${sameSite}${expires ? `; Expires=${expires.toUTCString()}` : ''}`;
@@ -102,6 +109,16 @@ module.exports = async function (context, req) {
     const middlewareResult = await middleware()(request, response);
 
     if (middlewareResult) {
+      // Dynamically update Access-Control-Expose-Headers to include all headers set by SuperTokens
+      if (superTokensHeaders.length > 0) {
+        const existingExpose = responseHeaders['Access-Control-Expose-Headers'] || '';
+        const existingHeaders = existingExpose.split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+        const allHeaders = [...new Set([...existingHeaders, ...superTokensHeaders])];
+        responseHeaders['Access-Control-Expose-Headers'] = allHeaders.join(', ');
+      }
+
+      context.log('Response headers:', JSON.stringify(responseHeaders));
+
       context.res = {
         status: responseStatus,
         headers: responseHeaders,
