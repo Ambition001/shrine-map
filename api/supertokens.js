@@ -11,6 +11,19 @@ let isInitialized = false;
 const initSuperTokens = () => {
   if (isInitialized) return;
 
+  // Check required environment variables
+  const requiredEnvVars = [
+    'SUPERTOKENS_CONNECTION_URI',
+    'SUPERTOKENS_API_KEY',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET'
+  ];
+
+  const missing = requiredEnvVars.filter(v => !process.env[v]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+
   supertokens.init({
     framework: "custom",
     supertokens: {
