@@ -105,8 +105,7 @@ const verifySession = async (req, context) => {
   }
 
   try {
-    // For header-based auth, SuperTokens looks for the token in different places
-    // Build a headers object that includes both Authorization and st-access-token
+    // For header-based auth, extract the access token from Authorization header
     const accessToken = authHeader.startsWith('Bearer ')
       ? authHeader.substring(7)
       : parsedCookies['st-access-token'] || parsedCookies['sAccessToken'];
@@ -115,56 +114,19 @@ const verifySession = async (req, context) => {
       context.log('Access token extracted:', accessToken ? `present (${accessToken.substring(0, 30)}...)` : 'missing');
     }
 
-    // Create a request/response wrapper for SuperTokens
-    // SuperTokens requires: getMethod, getCookieValue, getHeaderValue, getOriginalURL
-    const requestWrapper = {
-      getMethod: () => {
-        return req.method.toLowerCase();
-      },
-      getHeaderValue: (name) => {
-        // SuperTokens may request headers with different cases
-        const lowerName = name.toLowerCase();
+    if (!accessToken) {
+      return { error: 'Unauthorized', message: 'No access token found' };
+    }
 
-        // For authorization header, return the original
-        if (lowerName === 'authorization') {
-          return authHeader || undefined;
-        }
-
-        // For st-access-token, return from cookie if header is missing
-        if (lowerName === 'st-access-token' && !req.headers['st-access-token']) {
-          // SuperTokens might look for this header in header-based auth mode
-          return accessToken || undefined;
-        }
-
-        const value = req.headers[name] || req.headers[lowerName];
-        if (context && context.log && (lowerName === 'authorization' || lowerName.startsWith('st-'))) {
-          context.log(`getHeaderValue(${name}):`, value ? `present (${String(value).substring(0, 30)}...)` : 'missing');
-        }
-        return value || undefined;
-      },
-      getCookieValue: (key) => {
-        const value = parsedCookies[key];
-        if (context && context.log) {
-          context.log(`getCookieValue(${key}):`, value ? 'present' : 'missing');
-        }
-        return value;
-      },
-      getOriginalURL: () => {
-        return req.url || '/';
+    // Use getSessionWithoutRequestResponse for serverless environments
+    // This method directly validates the access token without needing request/response wrappers
+    const session = await Session.getSessionWithoutRequestResponse(
+      accessToken,
+      undefined, // antiCsrfToken - not needed for header-based auth
+      {
+        sessionRequired: true,
+        checkDatabase: false // Don't check database for performance, just validate JWT
       }
-    };
-
-    const responseWrapper = {
-      setHeader: () => {},
-      setCookie: () => {},
-      removeHeader: () => {},
-      removeCookie: () => {}
-    };
-
-    const session = await Session.getSession(
-      requestWrapper,
-      responseWrapper,
-      { sessionRequired: true }
     );
 
     if (context && context.log) {
