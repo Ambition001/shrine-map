@@ -98,7 +98,9 @@ const verifySession = async (req, context) => {
   if (context && context.log) {
     context.log('Auth header present:', !!authHeader);
     context.log('Auth header starts with Bearer:', authHeader.startsWith('Bearer '));
+    context.log('Auth header length:', authHeader.length);
     context.log('Cookie keys:', Object.keys(parsedCookies).join(', '));
+    context.log('All header keys:', Object.keys(req.headers).join(', '));
   }
 
   try {
