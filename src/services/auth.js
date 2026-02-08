@@ -1,6 +1,8 @@
 /**
- * Authentication Service - Clerk Implementation
+ * Authentication Service - SuperTokens Implementation
  */
+import Session from 'supertokens-web-js/recipe/session';
+import { getAuthorisationURLWithQueryParamsAndSetState, signInAndUp } from 'supertokens-web-js/recipe/thirdparty';
 
 const isDev = process.env.NODE_ENV === 'development';
 const authEnabled = process.env.REACT_APP_AUTH_ENABLED === 'true';
@@ -12,31 +14,13 @@ const MOCK_USER = {
   email: 'dev@example.com'
 };
 
-// Clerk instance reference (set from React component via ClerkBridge)
-let _clerk = null;
+// Internal state
 let _user = null;
 let _isLoaded = false;
 let _authChangeCallbacks = [];
-let _getToken = null; // getToken function from useAuth()
 
 /**
- * Set Clerk instance (called from ClerkBridge component)
- * @internal
- */
-export const _setClerkInstance = (clerk) => {
-  _clerk = clerk;
-};
-
-/**
- * Set getToken function (called from ClerkBridge component)
- * @internal
- */
-export const _setGetToken = (getTokenFn) => {
-  _getToken = getTokenFn;
-};
-
-/**
- * Notify auth state change (called from ClerkBridge component)
+ * Notify auth state change (called from AuthBridge component)
  * @internal
  */
 export const _notifyAuthChange = (user, isLoaded) => {
@@ -46,11 +30,51 @@ export const _notifyAuthChange = (user, isLoaded) => {
 };
 
 /**
- * Get login redirect result
- * Not needed for Clerk (handles redirects internally)
+ * Initialize session and get user info
+ * Called when session exists
  */
-export const handleRedirectResult = () => {
-  return Promise.resolve(null);
+export const initSession = async () => {
+  if (isDev && !authEnabled) {
+    return MOCK_USER;
+  }
+
+  try {
+    const userId = await Session.getUserId();
+    // Get additional user info from access token payload if available
+    const accessTokenPayload = await Session.getAccessTokenPayloadSecurely();
+
+    return {
+      id: userId,
+      name: accessTokenPayload?.name || 'User',
+      email: accessTokenPayload?.email || null,
+      photoURL: accessTokenPayload?.picture || null
+    };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Handle OAuth redirect result
+ * Called after returning from Google/Twitter OAuth
+ */
+export const handleRedirectResult = async () => {
+  if (isDev && !authEnabled) {
+    return null;
+  }
+
+  try {
+    const response = await signInAndUp();
+
+    if (response.status === "OK") {
+      const userInfo = await initSession();
+      return userInfo;
+    }
+    return null;
+  } catch {
+    // Not a redirect callback, or error occurred
+    return null;
+  }
 };
 
 /**
@@ -100,26 +124,42 @@ export const isAuthenticated = () => {
 };
 
 /**
- * Google login - Opens Clerk sign-in modal
+ * Google login - Redirects to Google OAuth
  */
 export const loginWithGoogle = async () => {
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
 
-  _clerk?.openSignIn();
+  try {
+    const authUrl = await getAuthorisationURLWithQueryParamsAndSetState({
+      thirdPartyId: "google",
+      frontendRedirectURI: `${window.location.origin}/auth/callback/google`
+    });
+    window.location.assign(authUrl);
+  } catch (error) {
+    console.error("Failed to start Google login:", error);
+  }
   return null;
 };
 
 /**
- * Twitter/X login - Opens Clerk sign-in modal
+ * Twitter/X login - Redirects to Twitter OAuth
  */
 export const loginWithTwitter = async () => {
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
 
-  _clerk?.openSignIn();
+  try {
+    const authUrl = await getAuthorisationURLWithQueryParamsAndSetState({
+      thirdPartyId: "twitter",
+      frontendRedirectURI: `${window.location.origin}/auth/callback/twitter`
+    });
+    window.location.assign(authUrl);
+  } catch (error) {
+    console.error("Failed to start Twitter login:", error);
+  }
   return null;
 };
 
@@ -131,11 +171,19 @@ export const logout = async () => {
   if (isDev && !authEnabled) {
     return;
   }
-  await _clerk?.signOut();
+
+  try {
+    await Session.signOut();
+    _notifyAuthChange(null, true);
+  } catch (error) {
+    console.error("Logout failed:", error);
+  }
 };
 
 /**
  * Get access token (for API calls)
+ * SuperTokens handles tokens automatically via cookies
+ * This function is kept for compatibility but returns a placeholder
  * @returns {Promise<string|null>}
  */
 export const getAccessToken = async () => {
@@ -144,13 +192,30 @@ export const getAccessToken = async () => {
   }
 
   try {
-    // Use getToken from useAuth() hook (passed via ClerkBridge)
-    if (_getToken) {
-      const token = await _getToken();
-      return token || null;
+    const exists = await Session.doesSessionExist();
+    if (exists) {
+      // SuperTokens uses cookies, so we return a placeholder
+      // The actual token is sent automatically with credentials: 'include'
+      return 'supertokens-session';
     }
     return null;
   } catch {
     return null;
+  }
+};
+
+/**
+ * Check if session exists
+ * @returns {Promise<boolean>}
+ */
+export const doesSessionExist = async () => {
+  if (isDev && !authEnabled) {
+    return true;
+  }
+
+  try {
+    return await Session.doesSessionExist();
+  } catch {
+    return false;
   }
 };

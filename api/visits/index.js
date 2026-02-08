@@ -1,5 +1,5 @@
 const { CosmosClient } = require('@azure/cosmos');
-const { verifyToken } = require('@clerk/backend');
+const { verifySession, initSuperTokens } = require('../supertokens');
 
 // Cosmos DB configuration
 const endpoint = process.env.COSMOS_ENDPOINT;
@@ -30,38 +30,22 @@ async function getContainer() {
 }
 
 /**
- * Verify Clerk JWT Token
+ * Verify SuperTokens Session
  */
-async function verifyClerkToken(req, context) {
-  // Use X-Clerk-Token header to bypass Azure SWA's Authorization header interception
-  const token = req.headers['x-clerk-token'];
+async function verifyUserSession(req, context) {
+  // Initialize SuperTokens
+  initSuperTokens();
 
-  if (!token || token === 'null') {
-    return { error: 'Token is empty' };
+  // Use the verifySession helper from supertokens.js
+  const result = await verifySession(req, null);
+
+  if (result.error) {
+    context.log.error(`[Auth] Session verification failed: ${result.error}`);
+    return { error: result.error };
   }
 
-  // Development mode mock token
-  if (token === 'mock-token') {
-    return { userId: 'dev-user-123' };
-  }
-
-  const secretKey = process.env.CLERK_SECRET_KEY;
-  if (!secretKey) {
-    context.log.error('[Auth] CLERK_SECRET_KEY not configured');
-    return { error: 'Server authentication not configured' };
-  }
-
-  try {
-    const verifiedToken = await verifyToken(token, {
-      secretKey,
-      authorizedParties: ['https://ichinomiyamap.com', 'https://www.ichinomiyamap.com', 'http://localhost:3000']
-    });
-    context.log.info(`[Auth] Token verified for user: ${verifiedToken.sub}`);
-    return { userId: verifiedToken.sub };
-  } catch (error) {
-    context.log.error(`[Auth] Token verification failed: ${error.message}`);
-    return { error: error.message };
-  }
+  context.log.info(`[Auth] Session verified for user: ${result.userId}`);
+  return { userId: result.userId };
 }
 
 /**
@@ -122,11 +106,12 @@ module.exports = async function (context, req) {
   const { method } = req;
   const shrineId = context.bindingData.shrineId;
 
-  // CORS headers
+  // CORS headers - must allow credentials for SuperTokens cookie-based auth
   const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': process.env.WEBSITE_DOMAIN || 'https://ichinomiyamap.com',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Clerk-Token',
+    'Access-Control-Allow-Headers': 'Content-Type, st-auth-mode, anti-csrf, rid, fdi-version',
+    'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400'
   };
 
@@ -141,25 +126,14 @@ module.exports = async function (context, req) {
   }
 
   // Verify user identity
-  const authResult = await verifyClerkToken(req, context);
+  const authResult = await verifyUserSession(req, context);
   if (authResult.error) {
-    // Get token for debugging
-    const authHeader = req.headers.authorization || req.headers.Authorization || '';
-    const token = authHeader.replace('Bearer ', '');
-    const tokenPreview = token ? token.substring(0, 50) + '...' : 'empty';
-
     context.res = {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: {
         error: 'Unauthorized',
-        message: authResult.error,
-        debug: {
-          hasClerkSecret: !!process.env.CLERK_SECRET_KEY,
-          hasAuthHeader: !!(req.headers.authorization || req.headers.Authorization),
-          tokenPreview,
-          tokenLength: token ? token.length : 0
-        }
+        message: authResult.error
       }
     };
     return;

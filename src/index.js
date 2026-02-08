@@ -1,17 +1,35 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ClerkProvider } from '@clerk/clerk-react';
-import { jaJP } from '@clerk/localizations';
+import SuperTokens from 'supertokens-auth-react';
+import ThirdParty from 'supertokens-auth-react/recipe/thirdparty';
+import Session from 'supertokens-auth-react/recipe/session';
 import './index.css';
 import App from './App';
 
-const clerkPubKey = process.env.REACT_APP_CLERK_PUBLISHABLE_KEY;
+// SuperTokens 初始化
+SuperTokens.init({
+  appInfo: {
+    appName: "一之宮巡礼",
+    apiDomain: window.location.origin,
+    websiteDomain: window.location.origin,
+    apiBasePath: "/api/auth",
+    websiteBasePath: "/auth"
+  },
+  recipeList: [
+    ThirdParty.init({
+      signInAndUpFeature: {
+        providers: [
+          ThirdParty.Google.init()
+        ]
+      }
+    }),
+    Session.init()
+  ]
+});
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <ClerkProvider publishableKey={clerkPubKey} localization={jaJP}>
-      <App />
-    </ClerkProvider>
+    <App />
   </React.StrictMode>
 );

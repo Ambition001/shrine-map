@@ -1,40 +1,32 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useClerk, useUser, useAuth } from '@clerk/clerk-react';
+import { useSessionContext } from 'supertokens-auth-react/recipe/session';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MapPin, Check, X, List, Map, LogIn, LogOut, User, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import shrineData from './data/shrines.json';
 import { getVisits, toggleVisitOptimistic, initLocalStorage, smartMerge, mergeAll, clearLocalStorage, replaceCloudWithLocal, syncPendingOperations } from './services/visits';
-import { onAuthChange, loginWithGoogle, logout as clerkLogout, handleRedirectResult, _setClerkInstance, _notifyAuthChange, _setGetToken } from './services/auth';
+import { onAuthChange, loginWithGoogle, logout, handleRedirectResult, _notifyAuthChange, initSession } from './services/auth';
 
-// ClerkBridge: Connects Clerk hooks to auth.js module
-function ClerkBridge() {
-  const clerk = useClerk();
-  const { user, isLoaded } = useUser();
-  const { getToken } = useAuth();
+// AuthBridge: Connects SuperTokens session to auth.js module
+function AuthBridge() {
+  const session = useSessionContext();
 
   useEffect(() => {
-    _setClerkInstance(clerk);
-  }, [clerk]);
+    if (session.loading) return;
 
-  useEffect(() => {
-    // Pass getToken function to auth.js
-    _setGetToken(getToken);
-  }, [getToken]);
+    const checkSession = async () => {
+      if (session.doesSessionExist) {
+        const userInfo = await initSession();
+        if (userInfo) {
+          _notifyAuthChange(userInfo, true);
+        }
+      } else {
+        _notifyAuthChange(null, true);
+      }
+    };
 
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (user) {
-      _notifyAuthChange({
-        id: user.id,
-        name: user.fullName || user.firstName || 'User',
-        email: user.primaryEmailAddress?.emailAddress,
-        photoURL: user.imageUrl
-      }, true);
-    } else {
-      _notifyAuthChange(null, true);
-    }
-  }, [user, isLoaded]);
+    checkSession();
+  }, [session.loading, session.doesSessionExist]);
 
   return null;
 }
@@ -474,7 +466,7 @@ const ShrineMapApp = () => {
       // 清空所有本地数据（包括 visits 表和待同步队列）
       // 确保登出后不会残留任何该账户的数据
       await clearLocalStorage();
-      await clerkLogout();
+      await logout();
       // 清空内存中的状态
       setVisitedShrines(new Set());
     } catch {
@@ -582,7 +574,7 @@ const ShrineMapApp = () => {
   if (loading) {
     return (
       <>
-        <ClerkBridge />
+        <AuthBridge />
         <div className="flex items-center justify-center h-screen bg-gray-50">
           <div className="text-gray-600">読み込み中...</div>
         </div>

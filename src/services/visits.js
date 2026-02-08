@@ -24,12 +24,15 @@ const authEnabled = process.env.REACT_APP_AUTH_ENABLED === 'true';
 const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 /**
- * Build API request headers
- * Use X-Clerk-Token to bypass Azure SWA's Authorization header interception
+ * Build fetch options for authenticated requests
+ * SuperTokens uses cookies for authentication, so we need credentials: 'include'
  */
-const buildAuthHeaders = (token) => ({
-  'X-Clerk-Token': token,
-  'Content-Type': 'application/json'
+const buildFetchOptions = (method = 'GET') => ({
+  method,
+  credentials: 'include',
+  headers: {
+    'Content-Type': 'application/json'
+  }
 });
 
 /**
@@ -75,9 +78,7 @@ export const getVisits = async () => {
 
   // Logged in: call API
   try {
-    const response = await fetch(`${API_URL}/visits`, {
-      headers: buildAuthHeaders(token)
-    });
+    const response = await fetch(`${API_URL}/visits`, buildFetchOptions('GET'));
 
     if (!response.ok) {
       let errorData;
@@ -119,10 +120,7 @@ export const addVisit = async (shrineId) => {
 
   // Logged in: call API
   try {
-    const response = await fetch(`${API_URL}/visits/${shrineId}`, {
-      method: 'POST',
-      headers: buildAuthHeaders(token)
-    });
+    const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST'));
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -158,10 +156,7 @@ export const removeVisit = async (shrineId) => {
 
   // Logged in: call API
   try {
-    const response = await fetch(`${API_URL}/visits/${shrineId}`, {
-      method: 'DELETE',
-      headers: buildAuthHeaders(token)
-    });
+    const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('DELETE'));
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -207,10 +202,7 @@ export const mergeLocalToCloud = async () => {
 
   // Batch upload local records to cloud
   const promises = [...localVisits].map(shrineId =>
-    fetch(`${API_URL}/visits/${shrineId}`, {
-      method: 'POST',
-      headers: buildAuthHeaders(token)
-    })
+    fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST'))
   );
 
   try {
@@ -271,7 +263,7 @@ export const smartMerge = async () => {
   // If so, sync them first before checking for conflicts
   const pendingOps = await getPendingOperations();
   if (pendingOps.length > 0) {
-    const syncResult = await doSync(token);
+    const syncResult = await doSync();
 
     // After sync, if all succeeded, use cloud data
     // Note: Don't clear local visits table, keep as cache
@@ -291,9 +283,7 @@ export const smartMerge = async () => {
   // Get cloud data
   let cloudVisits;
   try {
-    const response = await fetch(`${API_URL}/visits`, {
-      headers: buildAuthHeaders(token)
-    });
+    const response = await fetch(`${API_URL}/visits`, buildFetchOptions('GET'));
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -368,10 +358,7 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
   // 1. Delete cloud-only records
   if (onlyCloudIds.length > 0) {
     const deletePromises = onlyCloudIds.map(shrineId =>
-      fetch(`${API_URL}/visits/${shrineId}`, {
-        method: 'DELETE',
-        headers: buildAuthHeaders(token)
-      })
+      fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('DELETE'))
     );
 
     try {
@@ -384,10 +371,7 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
   // 2. Upload all local records (cloud will auto-dedupe)
   if (localVisits.size > 0) {
     const uploadPromises = [...localVisits].map(shrineId =>
-      fetch(`${API_URL}/visits/${shrineId}`, {
-        method: 'POST',
-        headers: buildAuthHeaders(token)
-      })
+      fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST'))
     );
 
     try {
@@ -425,9 +409,7 @@ export const mergeAll = async () => {
   // Get cloud data
   let cloudVisits;
   try {
-    const response = await fetch(`${API_URL}/visits`, {
-      headers: buildAuthHeaders(token)
-    });
+    const response = await fetch(`${API_URL}/visits`, buildFetchOptions('GET'));
     const data = await response.json();
     cloudVisits = new Set(data.map(v => v.shrineId));
   } catch {
@@ -454,10 +436,7 @@ export const mergeAll = async () => {
   const results = await Promise.all(
     onlyLocal.map(async (shrineId) => {
       try {
-        const response = await fetch(`${API_URL}/visits/${shrineId}`, {
-          method: 'POST',
-          headers: buildAuthHeaders(token)
-        });
+        const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST'));
         return { shrineId, success: response.ok };
       } catch {
         return { shrineId, success: false };
@@ -519,10 +498,9 @@ const addPendingOperationSmart = async (action, shrineId) => {
 
 /**
  * Execute sync of pending operations (core logic)
- * @param {string} token - Access token
  * @returns {Promise<{synced: number, failed: number}>}
  */
-const doSync = async (token) => {
+const doSync = async () => {
   const pendingOps = await getPendingOperations();
   if (pendingOps.length === 0) return { synced: 0, failed: 0 };
 
@@ -531,10 +509,9 @@ const doSync = async (token) => {
 
   for (const op of pendingOps) {
     try {
-      const response = await fetch(`${API_URL}/visits/${op.shrineId}`, {
-        method: op.action === 'add' ? 'POST' : 'DELETE',
-        headers: buildAuthHeaders(token)
-      });
+      const response = await fetch(`${API_URL}/visits/${op.shrineId}`,
+        buildFetchOptions(op.action === 'add' ? 'POST' : 'DELETE')
+      );
 
       if (response.ok || response.status === 404) {
         // Success, or record doesn't exist (on delete), remove from queue
@@ -571,7 +548,7 @@ export const syncPendingOperations = async () => {
       return;
     }
 
-    await doSync(token);
+    await doSync();
   } finally {
     isSyncing = false;
   }
