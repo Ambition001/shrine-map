@@ -137,17 +137,39 @@ module.exports = async function (context, req) {
       }
 
       // Build Set-Cookie headers from cookies array
+      // Azure Functions requires Set-Cookie to be an array for multiple cookies
       if (stResponse.cookies && stResponse.cookies.length > 0) {
-        responseHeaders['Set-Cookie'] = stResponse.cookies.map(cookie => {
+        context.log('Cookies to set:', JSON.stringify(stResponse.cookies.map(c => ({
+          key: c.key,
+          domain: c.domain,
+          path: c.path,
+          secure: c.secure,
+          httpOnly: c.httpOnly,
+          sameSite: c.sameSite,
+          expires: c.expires,
+          hasValue: !!c.value
+        }))));
+
+        const cookieStrings = stResponse.cookies.map(cookie => {
           let cookieStr = `${cookie.key}=${cookie.value}`;
           if (cookie.path) cookieStr += `; Path=${cookie.path}`;
           if (cookie.domain) cookieStr += `; Domain=${cookie.domain}`;
           if (cookie.secure) cookieStr += '; Secure';
           if (cookie.httpOnly) cookieStr += '; HttpOnly';
           if (cookie.sameSite) cookieStr += `; SameSite=${cookie.sameSite}`;
-          if (cookie.expires) cookieStr += `; Expires=${new Date(cookie.expires).toUTCString()}`;
+          // Handle expires - could be a number (timestamp) or Date object
+          if (cookie.expires) {
+            const expiresDate = typeof cookie.expires === 'number'
+              ? new Date(cookie.expires)
+              : cookie.expires;
+            cookieStr += `; Expires=${expiresDate.toUTCString()}`;
+          }
           return cookieStr;
         });
+
+        // Azure Functions: Set-Cookie must be an array for multiple cookies
+        responseHeaders['Set-Cookie'] = cookieStrings;
+        context.log('Set-Cookie count:', cookieStrings.length);
       }
 
       context.log('Final response headers:', JSON.stringify(responseHeaders));
