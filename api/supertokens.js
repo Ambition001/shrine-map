@@ -149,6 +149,9 @@ const initSuperTokens = () => {
                   // Google returns user info in multiple places, try all sources
                   const rawUserInfo = response.rawUserInfoFromProvider;
 
+                  // Log raw user info for debugging
+                  console.log('rawUserInfoFromProvider:', JSON.stringify(rawUserInfo, null, 2));
+
                   // Try fromIdTokenPayload first (Google ID token contains profile info)
                   const idTokenPayload = rawUserInfo?.fromIdTokenPayload;
                   // Also check fromUserInfoAPI as fallback
@@ -161,6 +164,8 @@ const initSuperTokens = () => {
                                 response.user?.emails?.[0]?.email || null;
                   const picture = idTokenPayload?.picture || userInfoAPI?.picture || null;
 
+                  console.log('Extracted profile:', { name, email, picture });
+
                   // Store user info in access token payload
                   if (response.session) {
                     await response.session.mergeIntoAccessTokenPayload({
@@ -168,6 +173,9 @@ const initSuperTokens = () => {
                       email,
                       picture
                     });
+                    console.log('Profile info stored in access token payload');
+                  } else {
+                    console.log('No session object available to store profile info');
                   }
                 }
 
