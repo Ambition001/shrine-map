@@ -24,24 +24,29 @@ const authEnabled = process.env.REACT_APP_AUTH_ENABLED === 'true';
 const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 /**
+ * Build API request headers
+ */
+const buildAuthHeaders = (token) => ({
+  'Authorization': `Bearer ${token}`,
+  'X-Firebase-Token': token,
+  'Content-Type': 'application/json'
+});
+
+/**
  * Build fetch options for authenticated requests
- * Uses st-access-token header (Azure SWA replaces Authorization header)
  * @param {string} method - HTTP method
- * @param {string|null} token - Access token from SuperTokens
+ * @param {string|null} token - Access token from Firebase
  */
 const buildFetchOptions = (method = 'GET', token = null) => {
   const options = {
     method,
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json'
     }
   };
 
-  // Add st-access-token header if token is available
-  // Note: Azure SWA replaces Authorization header, so we use st-access-token instead
   if (token && token !== 'mock-token') {
-    options.headers['st-access-token'] = token;
+    options.headers = buildAuthHeaders(token);
   }
 
   return options;

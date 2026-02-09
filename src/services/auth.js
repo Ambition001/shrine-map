@@ -1,80 +1,59 @@
 /**
- * Authentication Service - SuperTokens Implementation
+ * Authentication Service
+ * Uses Firebase Auth + Google/Twitter login
+ * Desktop uses popup, mobile uses redirect
  */
-import Session from 'supertokens-web-js/recipe/session';
-import { getAuthorisationURLWithQueryParamsAndSetState, signInAndUp } from 'supertokens-web-js/recipe/thirdparty';
+import {
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signOut,
+  onAuthStateChanged,
+  browserLocalPersistence,
+  setPersistence
+} from 'firebase/auth';
+import { auth, googleProvider, twitterProvider } from './firebase';
+
+// Ensure localStorage persistence so state is restored after redirect
+setPersistence(auth, browserLocalPersistence).catch(() => {});
 
 const isDev = process.env.NODE_ENV === 'development';
 const authEnabled = process.env.REACT_APP_AUTH_ENABLED === 'true';
 
-// Mock user for dev mode without auth
+// Mock user (dev mode without auth enabled)
 const MOCK_USER = {
   id: 'dev-user-123',
   name: 'Dev User',
   email: 'dev@example.com'
 };
 
-// Internal state
-let _user = null;
-let _isLoaded = false;
-let _authChangeCallbacks = [];
-
-/**
- * Notify auth state change (called from AuthBridge component)
- * @internal
- */
-export const _notifyAuthChange = (user, isLoaded) => {
-  _user = user;
-  _isLoaded = isLoaded;
-  _authChangeCallbacks.forEach(cb => cb(user));
-};
-
-/**
- * Initialize session and get user info
- * Called when session exists
- */
-export const initSession = async () => {
-  if (isDev && !authEnabled) {
-    return MOCK_USER;
-  }
-
-  try {
-    const userId = await Session.getUserId();
-    // Get additional user info from access token payload if available
-    const accessTokenPayload = await Session.getAccessTokenPayloadSecurely();
-
-    return {
-      id: userId,
-      name: accessTokenPayload?.name || 'User',
-      email: accessTokenPayload?.email || null,
-      photoURL: accessTokenPayload?.picture || null
-    };
-  } catch {
-    return null;
-  }
-};
-
-/**
- * Handle OAuth redirect result
- * Called after returning from Google/Twitter OAuth
- */
-export const handleRedirectResult = async () => {
-  if (isDev && !authEnabled) {
-    return null;
-  }
-
-  try {
-    const response = await signInAndUp();
-
-    if (response.status === "OK") {
-      const userInfo = await initSession();
-      return userInfo;
+// Call getRedirectResult immediately on module load (runs once)
+// This gets the result before React StrictMode remounts components
+const redirectResultPromise = (isDev && !authEnabled)
+  ? Promise.resolve(null)
+  : (async () => {
+    try {
+      const result = await getRedirectResult(auth);
+      if (result) {
+        return {
+          id: result.user.uid,
+          name: result.user.displayName,
+          email: result.user.email,
+          photoURL: result.user.photoURL
+        };
+      }
+      return null;
+    } catch {
+      return null; // Don't throw error, avoid blocking the app
     }
-    return null;
-  } catch {
-    // Not a redirect callback, or error occurred
-    return null;
-  }
+  })();
+
+/**
+ * Get login redirect result
+ * Returns the result already obtained during module initialization
+ */
+export const handleRedirectResult = () => {
+  return redirectResultPromise;
 };
 
 /**
@@ -85,20 +64,21 @@ export const handleRedirectResult = async () => {
 export const onAuthChange = (callback) => {
   if (isDev && !authEnabled) {
     callback(MOCK_USER);
-    return () => {};
+    return () => { };
   }
 
-  _authChangeCallbacks.push(callback);
-
-  // If already loaded, call immediately with current state
-  if (_isLoaded) {
-    callback(_user);
-  }
-
-  // Return unsubscribe function
-  return () => {
-    _authChangeCallbacks = _authChangeCallbacks.filter(cb => cb !== callback);
-  };
+  return onAuthStateChanged(auth, (firebaseUser) => {
+    if (firebaseUser) {
+      callback({
+        id: firebaseUser.uid,
+        name: firebaseUser.displayName,
+        email: firebaseUser.email,
+        photoURL: firebaseUser.photoURL
+      });
+    } else {
+      callback(null);
+    }
+  });
 };
 
 /**
@@ -109,7 +89,17 @@ export const getCurrentUser = () => {
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
-  return _user;
+
+  const firebaseUser = auth.currentUser;
+  if (firebaseUser) {
+    return {
+      id: firebaseUser.uid,
+      name: firebaseUser.displayName,
+      email: firebaseUser.email,
+      photoURL: firebaseUser.photoURL
+    };
+  }
+  return null;
 };
 
 /**
@@ -120,47 +110,60 @@ export const isAuthenticated = () => {
   if (isDev && !authEnabled) {
     return true;
   }
-  return _user !== null;
+  return auth.currentUser !== null;
 };
 
 /**
- * Google login - Redirects to Google OAuth
+ * Detect if device is mobile
+ */
+const isMobile = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+/**
+ * Google login
+ * Desktop uses popup, mobile uses redirect (Firebase Hosting supported)
  */
 export const loginWithGoogle = async () => {
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
 
-  try {
-    const authUrl = await getAuthorisationURLWithQueryParamsAndSetState({
-      thirdPartyId: "google",
-      frontendRedirectURI: `${window.location.origin}/auth/callback/google`
-    });
-    window.location.assign(authUrl);
-  } catch (error) {
-    console.error("Failed to start Google login:", error);
+  if (isMobile()) {
+    await signInWithRedirect(auth, googleProvider);
+    return null;
   }
-  return null;
+
+  const result = await signInWithPopup(auth, googleProvider);
+  return {
+    id: result.user.uid,
+    name: result.user.displayName,
+    email: result.user.email,
+    photoURL: result.user.photoURL
+  };
 };
 
 /**
- * Twitter/X login - Redirects to Twitter OAuth
+ * Twitter/X login
+ * Desktop uses popup, mobile uses redirect
  */
 export const loginWithTwitter = async () => {
   if (isDev && !authEnabled) {
     return MOCK_USER;
   }
 
-  try {
-    const authUrl = await getAuthorisationURLWithQueryParamsAndSetState({
-      thirdPartyId: "twitter",
-      frontendRedirectURI: `${window.location.origin}/auth/callback/twitter`
-    });
-    window.location.assign(authUrl);
-  } catch (error) {
-    console.error("Failed to start Twitter login:", error);
+  if (isMobile()) {
+    await signInWithRedirect(auth, twitterProvider);
+    return null;
   }
-  return null;
+
+  const result = await signInWithPopup(auth, twitterProvider);
+  return {
+    id: result.user.uid,
+    name: result.user.displayName,
+    email: result.user.email,
+    photoURL: result.user.photoURL
+  };
 };
 
 /**
@@ -171,18 +174,11 @@ export const logout = async () => {
   if (isDev && !authEnabled) {
     return;
   }
-
-  try {
-    await Session.signOut();
-    _notifyAuthChange(null, true);
-  } catch (error) {
-    console.error("Logout failed:", error);
-  }
+  await signOut(auth);
 };
 
 /**
  * Get access token (for API calls)
- * With header-based auth, we need to get the actual JWT token
  * @returns {Promise<string|null>}
  */
 export const getAccessToken = async () => {
@@ -190,31 +186,34 @@ export const getAccessToken = async () => {
     return 'mock-token';
   }
 
-  try {
-    const exists = await Session.doesSessionExist();
-    if (exists) {
-      // Get the actual access token for header-based auth
-      const accessToken = await Session.getAccessToken();
-      return accessToken || null;
+  const user = auth.currentUser;
+  if (user) {
+    try {
+      const token = await user.getIdToken(true);
+
+      // Check token algorithm (HS256 is emulator token, not usable in production)
+      const header = JSON.parse(atob(token.split('.')[0]));
+      if (header.alg === 'HS256') {
+        await signOut(auth);
+        // Clear all Firebase-related IndexedDB data
+        try {
+          const databases = await indexedDB.databases();
+          for (const db of databases) {
+            if (db.name && db.name.includes('firebase')) {
+              indexedDB.deleteDatabase(db.name);
+            }
+          }
+        } catch {
+          // ignore
+        }
+        window.location.reload();
+        return null;
+      }
+
+      return token;
+    } catch {
+      return null;
     }
-    return null;
-  } catch {
-    return null;
   }
-};
-
-/**
- * Check if session exists
- * @returns {Promise<boolean>}
- */
-export const doesSessionExist = async () => {
-  if (isDev && !authEnabled) {
-    return true;
-  }
-
-  try {
-    return await Session.doesSessionExist();
-  } catch {
-    return false;
-  }
+  return null;
 };

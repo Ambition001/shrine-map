@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "firebase": "^12.8.0",
     "lucide-react": "^0.562.0",
     "mapbox-gl": "^3.18.0",
-    "supertokens-auth-react": "^0.44.0",
-    "supertokens-web-js": "^0.13.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-scripts": "5.0.1",

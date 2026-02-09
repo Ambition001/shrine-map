@@ -1,35 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSessionContext } from 'supertokens-auth-react/recipe/session';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MapPin, Check, X, List, Map, LogIn, LogOut, User, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import shrineData from './data/shrines.json';
 import { getVisits, toggleVisitOptimistic, initLocalStorage, smartMerge, mergeAll, clearLocalStorage, replaceCloudWithLocal, syncPendingOperations } from './services/visits';
-import { onAuthChange, loginWithGoogle, logout, handleRedirectResult, _notifyAuthChange, initSession } from './services/auth';
-
-// AuthBridge: Connects SuperTokens session to auth.js module
-function AuthBridge() {
-  const session = useSessionContext();
-
-  useEffect(() => {
-    if (session.loading) return;
-
-    const checkSession = async () => {
-      if (session.doesSessionExist) {
-        const userInfo = await initSession();
-        if (userInfo) {
-          _notifyAuthChange(userInfo, true);
-        }
-      } else {
-        _notifyAuthChange(null, true);
-      }
-    };
-
-    checkSession();
-  }, [session.loading, session.doesSessionExist]);
-
-  return null;
-}
+import { onAuthChange, loginWithGoogle, logout, handleRedirectResult } from './services/auth';
 
 // Mapbox token from environment variable
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
@@ -573,12 +548,9 @@ const ShrineMapApp = () => {
 
   if (loading) {
     return (
-      <>
-        <AuthBridge />
-        <div className="flex items-center justify-center h-screen bg-gray-50">
-          <div className="text-gray-600">読み込み中...</div>
-        </div>
-      </>
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-gray-600">読み込み中...</div>
+      </div>
     );
   }
 
