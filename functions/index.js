@@ -1,12 +1,14 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
-const { verifyToken } = require('@clerk/backend');
+const admin = require('firebase-admin');
 const { CosmosClient } = require('@azure/cosmos');
+
+// Initialize Firebase Admin (uses default credentials in Cloud Functions)
+admin.initializeApp();
 
 // Define secrets
 const cosmosEndpoint = defineSecret('COSMOS_ENDPOINT');
 const cosmosKey = defineSecret('COSMOS_KEY');
-const clerkSecretKey = defineSecret('CLERK_SECRET_KEY');
 
 // Cosmos DB configuration
 let container = null;
@@ -35,9 +37,9 @@ async function getContainer(endpoint, key) {
 }
 
 /**
- * Verify Clerk JWT Token
+ * Verify Firebase ID Token
  */
-async function verifyClerkToken(req, secretKey) {
+async function verifyFirebaseToken(req) {
   const authHeader = req.headers.authorization || '';
 
   if (!authHeader.startsWith('Bearer ')) {
@@ -56,8 +58,8 @@ async function verifyClerkToken(req, secretKey) {
   }
 
   try {
-    const verifiedToken = await verifyToken(token, { secretKey });
-    return { userId: verifiedToken.sub };
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    return { userId: decodedToken.uid };
   } catch (error) {
     return { error: error.message };
   }
@@ -119,17 +121,17 @@ async function removeVisit(userId, shrineId, endpoint, key) {
  */
 exports.visits = onRequest(
   {
-    secrets: [cosmosEndpoint, cosmosKey, clerkSecretKey],
+    secrets: [cosmosEndpoint, cosmosKey],
+    cors: true,  // Enable CORS
     maxInstances: 10  // Limit concurrent instances to cap costs
   },
   async (req, res) => {
     // Get secrets
     const endpoint = cosmosEndpoint.value();
     const key = cosmosKey.value();
-    const clerkSecret = clerkSecretKey.value();
 
     // Verify user identity
-    const authResult = await verifyClerkToken(req, clerkSecret);
+    const authResult = await verifyFirebaseToken(req);
     if (authResult.error) {
       return res.status(401).json({
         error: 'Unauthorized',
@@ -175,7 +177,7 @@ exports.visits = onRequest(
       if (error.message === 'Cosmos DB configuration missing') {
         return res.status(503).json({
           error: 'Database not configured',
-          message: 'Please configure COSMOS_ENDPOINT and COSMOS_KEY environment variables'
+          message: 'Please configure COSMOS_ENDPOINT and COSMOS_KEY secrets'
         });
       }
 

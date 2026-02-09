@@ -28,7 +28,6 @@ const API_URL = process.env.REACT_APP_API_URL || '/api';
  */
 const buildAuthHeaders = (token) => ({
   'Authorization': `Bearer ${token}`,
-  'X-Firebase-Token': token,
   'Content-Type': 'application/json'
 });
 
