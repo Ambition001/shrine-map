@@ -57,9 +57,10 @@ const ShrineMapApp = () => {
   // body re-setting true is the correct guard; useRef(false) is the initial value.
   useEffect(() => {
     isMounted.current = true;
+    const timers = errorTimersRef.current;
     return () => {
       isMounted.current = false;
-      errorTimersRef.current.forEach(clearTimeout);
+      timers.forEach(clearTimeout);
     };
   }, []);
 
