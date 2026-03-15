@@ -197,14 +197,18 @@ export const mergeLocalToCloud = async () => {
     return { merged: false, count: 0 };
   }
 
-  // Batch upload local records to cloud
-  const promises = [...localVisits].map(shrineId =>
-    fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST', token))
-  );
-
+  // Batch upload local records to cloud, checking each response
   try {
-    await Promise.all(promises);
-    // Clear local storage
+    const results = await Promise.all(
+      [...localVisits].map(async (shrineId) => {
+        const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST', token));
+        return response.ok;
+      })
+    );
+    if (results.some(ok => !ok)) {
+      return { merged: false, count: 0 };
+    }
+    // Clear local storage only when all uploads succeeded
     await clearAllVisits();
     localStorage.removeItem(STORAGE_KEY); // Ensure old localStorage is cleared
     return { merged: true, count: localVisits.size };
@@ -354,12 +358,16 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
 
   // 1. Delete cloud-only records
   if (onlyCloudIds.length > 0) {
-    const deletePromises = onlyCloudIds.map(shrineId =>
-      fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('DELETE', token))
-    );
-
     try {
-      await Promise.all(deletePromises);
+      const deleteResults = await Promise.all(
+        onlyCloudIds.map(async (shrineId) => {
+          const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('DELETE', token));
+          return response.ok;
+        })
+      );
+      if (deleteResults.some(ok => !ok)) {
+        return { replaced: false, uploaded: 0, deleted: 0, finalVisits: new Set() };
+      }
     } catch {
       return { replaced: false, uploaded: 0, deleted: 0, finalVisits: new Set() };
     }
@@ -367,12 +375,16 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
 
   // 2. Upload all local records (cloud will auto-dedupe)
   if (localVisits.size > 0) {
-    const uploadPromises = [...localVisits].map(shrineId =>
-      fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST', token))
-    );
-
     try {
-      await Promise.all(uploadPromises);
+      const uploadResults = await Promise.all(
+        [...localVisits].map(async (shrineId) => {
+          const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST', token));
+          return response.ok;
+        })
+      );
+      if (uploadResults.some(ok => !ok)) {
+        return { replaced: false, uploaded: 0, deleted: onlyCloudIds.length, finalVisits: new Set() };
+      }
     } catch {
       return { replaced: false, uploaded: 0, deleted: onlyCloudIds.length, finalVisits: new Set() };
     }
@@ -407,6 +419,9 @@ export const mergeAll = async () => {
   let cloudVisits;
   try {
     const response = await fetch(`${API_URL}/visits`, buildFetchOptions('GET', token));
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
     const data = await response.json();
     cloudVisits = new Set(data.map(v => v.shrineId));
   } catch {

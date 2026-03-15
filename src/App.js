@@ -25,6 +25,7 @@ const ShrineMapApp = () => {
   const isMounted = useRef(false); // track mount state for timer cleanup
   const errorTimersRef = useRef([]); // track error-display timer IDs for cleanup
   const pendingFocusRef = useRef(null); // shrine to focus once map initializes
+  const visitsErrorMsg = useRef(null); // tracks the last visits-load error message for selective clearing
 
   // 过滤有经纬度的神社用于地图显示
   const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
@@ -40,17 +41,6 @@ const ShrineMapApp = () => {
   // M1: use narrow interface functions (showSyncMessage, clearMergeDialog) instead of raw setters
   const { user, authLoading, syncMessage, showSyncMessage, mergeDialog, clearMergeDialog, visitLoadTrigger } = useAuth();
   const { visitedShrines, updateVisitedShrines, loading, error: visitsError } = useVisits(user, authLoading, visitLoadTrigger);
-
-  // HIGH-4: surface useVisits load errors via the existing syncError state so the
-  // error banner shows when getVisits() throws on first load.
-  // When visitsError resolves to null (retry succeeded), clear the banner.
-  useEffect(() => {
-    if (visitsError) {
-      setSyncError(visitsError.message || String(visitsError));
-    } else {
-      setSyncError(null);
-    }
-  }, [visitsError]);
 
   // Track mount state so async callbacks can skip setState after unmount.
   // React Strict Mode runs effects twice (mount→unmount→mount), so the effect
@@ -71,6 +61,24 @@ const ShrineMapApp = () => {
     }, delayMs);
     errorTimersRef.current.push(timerId);
   }, []);
+
+  // HIGH-4: surface useVisits load errors via the existing syncError state so the
+  // error banner shows when getVisits() throws on first load.
+  // Use a ref to track the exact message we set, so that when visitsError resolves
+  // we only clear syncError if it still contains that message — not an error from
+  // another source (toggle, merge, etc.) that may have replaced it in the meantime.
+  useEffect(() => {
+    if (visitsError) {
+      const msg = visitsError.message || String(visitsError);
+      visitsErrorMsg.current = msg;
+      setSyncError(msg);
+      scheduleErrorClear(5000);
+    } else if (visitsErrorMsg.current !== null) {
+      const lastMsg = visitsErrorMsg.current;
+      visitsErrorMsg.current = null;
+      setSyncError(prev => (prev === lastMsg ? null : prev));
+    }
+  }, [visitsError, scheduleErrorClear]);
 
   // 监听视口高度变化（处理移动端地址栏）
   useEffect(() => {

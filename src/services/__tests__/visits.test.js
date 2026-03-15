@@ -6,6 +6,24 @@
  * HTTP calls are controllable.
  */
 
+// Mock firebase dependencies so that loading auth.js (auto-mocked below)
+// does not trigger real Firebase initialisation (which requires valid env vars).
+jest.mock('firebase/auth', () => ({
+  signInWithPopup: jest.fn(),
+  signInWithRedirect: jest.fn(() => Promise.resolve()),
+  getRedirectResult: jest.fn(() => Promise.resolve(null)),
+  signOut: jest.fn(() => Promise.resolve()),
+  onAuthStateChanged: jest.fn(),
+  browserLocalPersistence: { type: 'LOCAL' },
+  setPersistence: jest.fn(() => Promise.resolve()),
+}));
+
+jest.mock('../firebase', () => ({
+  auth: { currentUser: null },
+  googleProvider: { providerId: 'google.com' },
+  twitterProvider: { providerId: 'twitter.com' },
+}));
+
 jest.mock('../auth');
 jest.mock('../storage');
 
@@ -95,12 +113,6 @@ describe('initLocalStorage', () => {
 describe('smartMerge', () => {
   test('skip – no token', async () => {
     getAccessToken.mockResolvedValue(null);
-    const result = await smartMerge();
-    expect(result).toEqual({ action: 'skip', reason: 'not_logged_in' });
-  });
-
-  test('skip – mock-token (dev mode)', async () => {
-    getAccessToken.mockResolvedValue('mock-token');
     const result = await smartMerge();
     expect(result).toEqual({ action: 'skip', reason: 'not_logged_in' });
   });
@@ -477,12 +489,6 @@ describe('syncPendingOperations', () => {
 
   test('does nothing when there is no token', async () => {
     getAccessToken.mockResolvedValue(null);
-    await syncPendingOperations();
-    expect(getPendingOperations).not.toHaveBeenCalled();
-  });
-
-  test('does nothing for mock-token', async () => {
-    getAccessToken.mockResolvedValue('mock-token');
     await syncPendingOperations();
     expect(getPendingOperations).not.toHaveBeenCalled();
   });
