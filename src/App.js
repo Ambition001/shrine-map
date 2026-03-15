@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { MapPin, Check, X, List, Map, LogIn, LogOut, User, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
+import { List, Map, LogIn, LogOut, User } from 'lucide-react';
 import shrineData from './data/shrines.json';
 import { getVisits, toggleVisitOptimistic, initLocalStorage, smartMerge, mergeAll, clearLocalStorage, replaceCloudWithLocal, syncPendingOperations } from './services/visits';
 import { onAuthChange, loginWithGoogle, logout, handleRedirectResult } from './services/auth';
 import { generateGeoJSON, computeRegionStats, computeStats } from './utils/shrineUtils';
+import MergeConflictDialog from './components/MergeConflictDialog';
+import StatusBanners from './components/StatusBanners';
+import ShrineDetailPanel from './components/ShrineDetailPanel';
+import MapChoiceSheet from './components/MapChoiceSheet';
+import ShrineListView from './components/ShrineListView';
 
 // Mapbox token from environment variable
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
@@ -28,8 +33,6 @@ const ShrineMapApp = () => {
   const [syncMessage, setSyncMessage] = useState(null); // 同步提示消息
   const [mergeDialog, setMergeDialog] = useState(null); // 合并确认对话框 { localCount, onMerge, onDiscard }
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight); // 真实视口高度
-  const [collapsedRegions, setCollapsedRegions] = useState(new Set()); // 折叠的区域
-  const [collapsedPrefectures, setCollapsedPrefectures] = useState(new Set()); // 折叠的县
   const [showMapChoice, setShowMapChoice] = useState(false); // 地图选择菜单
   const [syncError, setSyncError] = useState(null);
   const [showLoginPrompt, setShowLoginPrompt] = useState(true); // 同步错误消息
@@ -488,89 +491,22 @@ const ShrineMapApp = () => {
 
   return (
     <div className="flex flex-col bg-gray-50" style={{ height: viewportHeight }}>
-      {/* 合并确认对话框（只在真正冲突时显示） */}
-      {mergeDialog && mergeDialog.type === 'conflict' && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-3">
-              データの競合が見つかりました
-            </h3>
-            <div className="text-sm text-gray-600 mb-4 space-y-1 bg-gray-50 rounded-lg p-3">
-              <p>・このデバイスのみ: <span className="font-medium text-gray-900">{mergeDialog.onlyLocalCount}件</span></p>
-              <p>・クラウドのみ: <span className="font-medium text-gray-900">{mergeDialog.onlyCloudCount}件</span></p>
-              <p>・両方に存在: <span className="font-medium text-gray-900">{mergeDialog.commonCount}件</span></p>
-            </div>
-            <div className="space-y-3">
-              {/* 推奨：すべて合併 */}
-              <button
-                onClick={handleMergeAll}
-                className="w-full py-3 px-4 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-              >
-                <div className="font-medium">すべて合併する（推奨）</div>
-                <div className="text-xs text-green-100 mt-0.5">
-                  合計 {mergeDialog.onlyLocalCount + mergeDialog.onlyCloudCount + mergeDialog.commonCount}件になります
-                </div>
-              </button>
+      <MergeConflictDialog
+        dialog={mergeDialog}
+        onMergeAll={handleMergeAll}
+        onUseCloud={handleUseCloud}
+        onUseLocal={handleUseLocal}
+      />
 
-              {/* クラウドのみ使用 */}
-              <button
-                onClick={handleUseCloud}
-                className="w-full py-3 px-4 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-left"
-              >
-                <div className="font-medium">クラウドのみ使用</div>
-                <div className="text-xs text-red-500 mt-0.5">
-                  このデバイスの {mergeDialog.onlyLocalCount}件 は削除されます
-                </div>
-              </button>
-
-              {/* ローカルのみ使用 */}
-              <button
-                onClick={handleUseLocal}
-                className="w-full py-3 px-4 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-left"
-              >
-                <div className="font-medium">このデバイスのみ使用</div>
-                <div className="text-xs text-red-500 mt-0.5">
-                  クラウドの {mergeDialog.onlyCloudCount}件 は削除されます
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 同步成功提示 */}
-      {syncMessage && (
-        <div className="bg-green-500 text-white px-4 py-2 text-sm text-center">
-          ✓ {syncMessage}
-        </div>
-      )}
-
-      {/* 未登录提示 - 可关闭 */}
-      {!user && !authLoading && showLoginPrompt && (
-        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-sm text-yellow-800 text-center relative">
-          <span>ログインすると記録をクラウドに保存できます</span>
-          <button
-            onClick={() => setShowLoginPrompt(false)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-yellow-600 hover:text-yellow-800 p-1"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {/* 同步错误提示 */}
-      {syncError && (
-        <div className="bg-red-500 text-white px-4 py-2 text-sm text-center">
-          ⚠ {syncError}
-        </div>
-      )}
-
-      {/* 离线状态提示 */}
-      {!isOnline && (
-        <div className="bg-orange-500 text-white px-4 py-2 text-sm text-center">
-          オフラインモード - データは後で同期されます
-        </div>
-      )}
+      <StatusBanners
+        syncMessage={syncMessage}
+        user={user}
+        authLoading={authLoading}
+        showLoginPrompt={showLoginPrompt}
+        onDismissLoginPrompt={() => setShowLoginPrompt(false)}
+        syncError={syncError}
+        isOnline={isOnline}
+      />
 
       {/* 头部 */}
       <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-4 shadow-lg">
@@ -666,225 +602,30 @@ const ShrineMapApp = () => {
           </div>
         )}
 
-        {/* 选中的神社信息 */}
         {viewMode === 'map' && selectedShrine && (
-          <div className="absolute bottom-4 left-4 right-4 bg-white rounded-lg shadow-xl p-4 z-10">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">{selectedShrine.name}</h3>
-                <p className="text-xs text-gray-500">{selectedShrine.reading}</p>
-                <p className="text-sm text-gray-600">{selectedShrine.province} ・ {selectedShrine.prefecture}</p>
-                {selectedShrine.goshuinHours && (
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">御朱印受付:</span> {selectedShrine.goshuinHours}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={closeSelectedShrine}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => toggleVisited(selectedShrine.id)}
-                className={`flex-1 py-2 rounded-lg font-medium transition-colors ${visitedShrines.has(selectedShrine.id)
-                  ? 'bg-green-500 text-white hover:bg-green-600'
-                  : 'bg-red-500 text-white hover:bg-red-600'
-                  }`}
-              >
-                {visitedShrines.has(selectedShrine.id) ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Check size={18} /> 参拝済み
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    <MapPin size={18} /> 参拝済みとしてマーク
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setShowMapChoice(true)}
-                className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-2 font-medium"
-              >
-                <ExternalLink size={18} />
-                地図
-              </button>
-            </div>
-          </div>
+          <ShrineDetailPanel
+            shrine={selectedShrine}
+            isVisited={visitedShrines.has(selectedShrine.id)}
+            onToggle={toggleVisited}
+            onClose={closeSelectedShrine}
+            onMapChoice={() => setShowMapChoice(true)}
+          />
         )}
 
-        {/* 地图选择 Action Sheet */}
         {showMapChoice && selectedShrine && (
-          <>
-            {/* 遮罩 */}
-            <div
-              className="fixed inset-0 bg-black bg-opacity-50 z-40"
-              onClick={() => setShowMapChoice(false)}
-            />
-            {/* 底部面板 */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 p-4 pb-8 animate-slide-up">
-              <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4" />
-              <p className="text-center text-gray-600 mb-4">地図アプリを選択</p>
-              <div className="space-y-2">
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${selectedShrine.lat},${selectedShrine.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 rounded-lg text-center font-medium transition-colors"
-                  onClick={() => setShowMapChoice(false)}
-                >
-                  Google Maps
-                </a>
-                <a
-                  href={`https://maps.apple.com/?ll=${selectedShrine.lat},${selectedShrine.lng}&q=${encodeURIComponent(selectedShrine.name)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 rounded-lg text-center font-medium transition-colors"
-                  onClick={() => setShowMapChoice(false)}
-                >
-                  Apple Maps
-                </a>
-              </div>
-              <button
-                onClick={() => setShowMapChoice(false)}
-                className="w-full mt-4 py-3 text-blue-500 font-medium"
-              >
-                キャンセル
-              </button>
-            </div>
-          </>
+          <MapChoiceSheet
+            shrine={selectedShrine}
+            onClose={() => setShowMapChoice(false)}
+          />
         )}
 
-        {/* 列表视图 - 三层结构：区域 → 县 → 神社 */}
         {viewMode === 'list' && (
-          <div className="absolute inset-0 overflow-auto p-4 space-y-4 bg-gray-50">
-            {regionStats.map(({ region, total, visited, percentage, prefectures }) => {
-              const isRegionCollapsed = collapsedRegions.has(region);
-              const toggleRegionCollapse = () => {
-                setCollapsedRegions(prev => {
-                  const next = new Set(prev);
-                  if (next.has(region)) {
-                    next.delete(region);
-                  } else {
-                    next.add(region);
-                  }
-                  return next;
-                });
-                // 展开区域时，清空该区域下所有县的折叠状态（保持县展开）
-                if (isRegionCollapsed) {
-                  setCollapsedPrefectures(prev => {
-                    const updated = new Set(prev);
-                    prefectures.forEach(p => updated.delete(`${region}-${p.prefecture}`));
-                    return updated;
-                  });
-                }
-              };
-
-              return (
-                <div key={region}>
-                  {/* 区域标题 - 可点击折叠 */}
-                  <div
-                    className="bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg p-3 mb-3 shadow cursor-pointer"
-                    onClick={toggleRegionCollapse}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <div className="flex items-center gap-2">
-                        {isRegionCollapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}
-                        <h2 className="text-lg font-bold">{region}</h2>
-                      </div>
-                      <div className="text-sm">
-                        {visited}/{total}社 ({percentage}%)
-                      </div>
-                    </div>
-                    <div className="w-full bg-red-900 rounded-full h-1.5">
-                      <div
-                        className="bg-yellow-400 h-1.5 rounded-full transition-all duration-500"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* 该区域下的县列表 - 区域未折叠时才显示 */}
-                  {!isRegionCollapsed && (
-                    <div className="space-y-3 ml-2">
-                      {prefectures.map(({ prefecture, shrines: prefectureShrines, total, visited }) => {
-                        const isCollapsed = collapsedPrefectures.has(`${region}-${prefecture}`);
-                        const toggleCollapse = () => {
-                          const key = `${region}-${prefecture}`;
-                          setCollapsedPrefectures(prev => {
-                            const next = new Set(prev);
-                            if (next.has(key)) {
-                              next.delete(key);
-                            } else {
-                              next.add(key);
-                            }
-                            return next;
-                          });
-                        };
-
-                        return (
-                          <div key={prefecture}>
-                            {/* 县标题 - 可点击折叠 */}
-                            <div
-                              className="flex items-center gap-1 text-sm font-semibold text-gray-700 mb-2 pl-1 border-l-2 border-red-400 cursor-pointer hover:text-gray-900"
-                              onClick={toggleCollapse}
-                            >
-                              {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                              <span>{prefecture}</span>
-                              <span className="text-gray-500 font-normal">({visited}/{total})</span>
-                            </div>
-
-                            {/* 该县下的神社列表 - 可折叠 */}
-                            {!isCollapsed && (
-                              <div className="space-y-2">
-                                {prefectureShrines.map(shrine => {
-                                  const isVisited = visitedShrines.has(shrine.id);
-                                  return (
-                                    <div
-                                      key={shrine.id}
-                                      className="bg-white rounded-lg shadow p-3 hover:shadow-md transition-shadow ml-4"
-                                    >
-                                      <div className="flex items-start justify-between">
-                                        <div
-                                          className="flex-1 cursor-pointer"
-                                          onClick={() => focusOnShrine(shrine)}
-                                        >
-                                          <div className="flex items-center gap-2 mb-1">
-                                            <h3 className="font-bold text-gray-900">{shrine.name}</h3>
-                                            {isVisited && (
-                                              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">
-                                                参拝済
-                                              </span>
-                                            )}
-                                          </div>
-                                          <p className="text-xs text-gray-500">{shrine.province}</p>
-                                        </div>
-                                        <button
-                                          onClick={() => toggleVisited(shrine.id)}
-                                          className={`p-2 rounded-full ${isVisited ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                                            }`}
-                                        >
-                                          <Check size={20} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <ShrineListView
+            regionStats={regionStats}
+            visitedShrines={visitedShrines}
+            onToggleVisit={toggleVisited}
+            onFocusShrine={focusOnShrine}
+          />
         )}
       </div>
 
