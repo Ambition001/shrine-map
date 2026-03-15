@@ -16,9 +16,10 @@ export function useAuth() {
   // React Strict Mode's mount→cleanup→mount cycle resets the flag correctly.
   useEffect(() => {
     isMountedRef.current = true;
+    const timerIds = timerIdsRef.current;
     return () => {
       isMountedRef.current = false;
-      timerIdsRef.current.forEach(clearTimeout);
+      timerIds.forEach(clearTimeout);
     };
   }, []);
 
