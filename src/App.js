@@ -5,6 +5,7 @@ import { MapPin, Check, X, List, Map, LogIn, LogOut, User, ExternalLink, Chevron
 import shrineData from './data/shrines.json';
 import { getVisits, toggleVisitOptimistic, initLocalStorage, smartMerge, mergeAll, clearLocalStorage, replaceCloudWithLocal, syncPendingOperations } from './services/visits';
 import { onAuthChange, loginWithGoogle, logout, handleRedirectResult } from './services/auth';
+import { generateGeoJSON, computeRegionStats, computeStats } from './utils/shrineUtils';
 
 // Mapbox token from environment variable
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
@@ -83,25 +84,10 @@ const ShrineMapApp = () => {
 
 
   // 生成 GeoJSON 数据
-  const generateGeoJSON = useCallback((visited) => {
-    return {
-      type: 'FeatureCollection',
-      features: shrines.map(shrine => ({
-        type: 'Feature',
-        properties: {
-          id: shrine.id,
-          name: shrine.name,
-          prefecture: shrine.prefecture,
-          province: shrine.province,
-          visited: visited.has(shrine.id)
-        },
-        geometry: {
-          type: 'Point',
-          coordinates: [shrine.lng, shrine.lat]
-        }
-      }))
-    };
-  }, [shrines]);
+  const buildGeoJSON = useCallback(
+    (visited) => generateGeoJSON(shrines, visited),
+    [shrines]
+  );
 
   // 初始化 IndexedDB（应用启动时）
   useEffect(() => {
@@ -367,9 +353,9 @@ const ShrineMapApp = () => {
 
     const source = map.current.getSource('shrines');
     if (source) {
-      source.setData(generateGeoJSON(visitedShrines));
+      source.setData(buildGeoJSON(visitedShrines));
     }
-  }, [mapLoaded, visitedShrines, generateGeoJSON]);
+  }, [mapLoaded, visitedShrines, buildGeoJSON]);
 
   // 当UI布局变化（如关闭登录提示）时，调整地图大小
   useEffect(() => {
@@ -489,62 +475,8 @@ const ShrineMapApp = () => {
     }
   };
 
-  const stats = {
-    total: shrines.length,
-    visited: visitedShrines.size,
-    percentage: Math.round((visitedShrines.size / shrines.length) * 100)
-  };
-
-  // 按地区和县分组神社（三层结构：region → prefecture → shrines[]）
-  const shrinesByRegionAndPrefecture = shrines.reduce((acc, shrine) => {
-    const region = shrine.region || '不明';
-    const prefecture = shrine.prefecture || '不明';
-    if (!acc[region]) {
-      acc[region] = {};
-    }
-    if (!acc[region][prefecture]) {
-      acc[region][prefecture] = [];
-    }
-    acc[region][prefecture].push(shrine);
-    return acc;
-  }, {});
-
-  // 地区排序顺序
-  const regionOrder = ['北海道・東北', '関東', '北陸', '東海', '近畿', '中国・四国', '九州・沖縄'];
-
-  // 按顺序获取地区列表
-  const sortedRegions = regionOrder.filter(r => shrinesByRegionAndPrefecture[r]);
-
-  // 计算每个地区的统计（包含县级数据）
-  const regionStats = sortedRegions.map(region => {
-    const prefectures = shrinesByRegionAndPrefecture[region];
-    const prefectureList = Object.keys(prefectures).sort(); // 县按字母顺序排序
-
-    // 计算区域总数
-    let regionTotal = 0;
-    let regionVisited = 0;
-
-    const prefectureStats = prefectureList.map(prefecture => {
-      const shrineList = prefectures[prefecture];
-      const visitedCount = shrineList.filter(s => visitedShrines.has(s.id)).length;
-      regionTotal += shrineList.length;
-      regionVisited += visitedCount;
-      return {
-        prefecture,
-        shrines: shrineList,
-        total: shrineList.length,
-        visited: visitedCount
-      };
-    });
-
-    return {
-      region,
-      total: regionTotal,
-      visited: regionVisited,
-      percentage: Math.round((regionVisited / regionTotal) * 100),
-      prefectures: prefectureStats
-    };
-  });
+  const stats = computeStats(shrines, visitedShrines);
+  const regionStats = computeRegionStats(shrines, visitedShrines);
 
   if (loading) {
     return (
