@@ -183,7 +183,7 @@ export const logout = async () => {
  */
 export const getAccessToken = async () => {
   if (isDev && !authEnabled) {
-    return 'mock-token';
+    return null;
   }
 
   const user = auth.currentUser;
@@ -191,9 +191,22 @@ export const getAccessToken = async () => {
     try {
       const token = await user.getIdToken(true);
 
-      // Check token algorithm (HS256 is emulator token, not usable in production)
-      const header = JSON.parse(atob(token.split('.')[0]));
+      // Check token algorithm (HS256 is emulator token, not usable in production).
+      // Wrap atob/JSON.parse in its own try/catch to distinguish a decode error
+      // (malformed token) from a valid-but-wrong-algorithm token.
+      let header;
+      try {
+        header = JSON.parse(atob(token.split('.')[0]));
+      } catch {
+        // Malformed token header — cannot determine algorithm; treat as invalid
+        return null;
+      }
+
       if (header.alg === 'HS256') {
+        console.warn(
+          '[auth] HS256 token detected — this is a Firebase emulator token and cannot ' +
+          'be used in production. Signing out and reloading to clear emulator state.'
+        );
         await signOut(auth);
         // Clear all Firebase-related IndexedDB data
         try {

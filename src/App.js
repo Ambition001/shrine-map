@@ -3,14 +3,16 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { List, Map, LogIn, LogOut, User } from 'lucide-react';
 import shrineData from './data/shrines.json';
-import { getVisits, toggleVisitOptimistic, initLocalStorage, smartMerge, mergeAll, clearLocalStorage, replaceCloudWithLocal, syncPendingOperations } from './services/visits';
-import { onAuthChange, loginWithGoogle, logout, handleRedirectResult } from './services/auth';
+import { toggleVisitOptimistic, mergeAll, clearLocalStorage, replaceCloudWithLocal, getVisits } from './services/visits';
+import { loginWithGoogle, logout } from './services/auth';
 import { generateGeoJSON, computeRegionStats, computeStats } from './utils/shrineUtils';
 import MergeConflictDialog from './components/MergeConflictDialog';
 import StatusBanners from './components/StatusBanners';
 import ShrineDetailPanel from './components/ShrineDetailPanel';
 import MapChoiceSheet from './components/MapChoiceSheet';
 import ShrineListView from './components/ShrineListView';
+import { useAuth } from './hooks/useAuth';
+import { useVisits } from './hooks/useVisits';
 
 // Mapbox token from environment variable
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
@@ -20,23 +22,54 @@ const ShrineMapApp = () => {
   const map = useRef(null);
   const previousView = useRef(null); // 保存之前的地图视图
   const selectedShrineRef = useRef(null); // 用于事件处理中访问当前选中状态
+  const isMounted = useRef(false); // track mount state for timer cleanup
+  const errorTimersRef = useRef([]); // track error-display timer IDs for cleanup
+  const pendingFocusRef = useRef(null); // shrine to focus once map initializes
 
   // 过滤有经纬度的神社用于地图显示
   const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
-  const [visitedShrines, setVisitedShrines] = useState(new Set());
   const [selectedShrine, setSelectedShrine] = useState(null);
   const [viewMode, setViewMode] = useState('map');
-  const [loading, setLoading] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [syncMessage, setSyncMessage] = useState(null); // 同步提示消息
-  const [mergeDialog, setMergeDialog] = useState(null); // 合并确认对话框 { localCount, onMerge, onDiscard }
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight); // 真实视口高度
   const [showMapChoice, setShowMapChoice] = useState(false); // 地图选择菜单
   const [syncError, setSyncError] = useState(null);
   const [showLoginPrompt, setShowLoginPrompt] = useState(true); // 同步错误消息
   const [isOnline, setIsOnline] = useState(navigator.onLine); // 网络状态
+
+  // M1: use narrow interface functions (showSyncMessage, clearMergeDialog) instead of raw setters
+  const { user, authLoading, syncMessage, showSyncMessage, mergeDialog, clearMergeDialog, visitLoadTrigger } = useAuth();
+  const { visitedShrines, updateVisitedShrines, loading, error: visitsError } = useVisits(user, authLoading, visitLoadTrigger);
+
+  // HIGH-4: surface useVisits load errors via the existing syncError state so the
+  // error banner shows when getVisits() throws on first load.
+  // When visitsError resolves to null (retry succeeded), clear the banner.
+  useEffect(() => {
+    if (visitsError) {
+      setSyncError(visitsError.message || String(visitsError));
+    } else {
+      setSyncError(null);
+    }
+  }, [visitsError]);
+
+  // Track mount state so async callbacks can skip setState after unmount.
+  // React Strict Mode runs effects twice (mount→unmount→mount), so the effect
+  // body re-setting true is the correct guard; useRef(false) is the initial value.
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      errorTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
+  // Schedule a 3-second auto-clear of syncError, tracking the timer for cleanup
+  const scheduleErrorClear = useCallback((delayMs = 3000) => {
+    const timerId = setTimeout(() => {
+      if (isMounted.current) setSyncError(null);
+    }, delayMs);
+    errorTimersRef.current.push(timerId);
+  }, []);
 
   // 监听视口高度变化（处理移动端地址栏）
   useEffect(() => {
@@ -92,124 +125,6 @@ const ShrineMapApp = () => {
     [shrines]
   );
 
-  // 初始化 IndexedDB（应用启动时）
-  useEffect(() => {
-    const init = async () => {
-      await initLocalStorage();
-      // 触发一次后台同步，处理之前未完成的操作
-      syncPendingOperations();
-    };
-    init();
-  }, []);
-
-  // 监听网络恢复，自动重试同步
-  useEffect(() => {
-    const handleOnline = () => syncPendingOperations();
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
-  }, []);
-
-  // 处理登录重定向结果 + 监听认证状态
-  // 重要：必须先处理 redirect 结果，再设置 auth 监听器
-  useEffect(() => {
-    let previousUser = null;
-    let authUnsubscribe = null;
-    let isMounted = true;
-
-    const initAuth = async () => {
-      // 1. 先处理登录重定向结果（从 Google/Twitter 登录页面返回后）
-      try {
-        const redirectUser = await handleRedirectResult();
-        if (redirectUser && isMounted) {
-          setUser(redirectUser);
-          // 这里不需要重复调用 smartMerge，因为下方的 onAuthChange 会捕捉到用户变化
-        }
-      } catch {
-        // ignore redirect errors
-      }
-
-      // 2. 然后设置认证状态监听器
-      if (!isMounted) return;
-
-      authUnsubscribe = onAuthChange(async (currentUser) => {
-        if (!isMounted) return;
-
-        // 检测是否是新登录（之前没用户，现在有用户）
-        const isNewLogin = !previousUser && currentUser;
-        previousUser = currentUser;
-
-        setUser(currentUser);
-        setAuthLoading(false);
-
-        // 用户刚登录时，使用智能合并
-        if (isNewLogin) {
-          const mergeResult = await smartMerge();
-          switch (mergeResult.action) {
-            case 'use_cloud': break;
-            case 'use_local': break;
-            case 'pending_synced':
-              if (mergeResult.count > 0) {
-                setSyncMessage(`${mergeResult.count}件の記録を同期しました`);
-                setTimeout(() => setSyncMessage(null), 2000);
-              }
-              break;
-            case 'partial_sync':
-              setSyncMessage(`${mergeResult.count}件を同期しました（${mergeResult.failed}件失败）`);
-              setTimeout(() => setSyncMessage(null), 3000);
-              break;
-            case 'uploaded_local':
-              setSyncMessage(`${mergeResult.count}件の記録を同期しました`);
-              setTimeout(() => setSyncMessage(null), 2000);
-              break;
-            case 'ask_user':
-              setMergeDialog({
-                type: 'conflict',
-                onlyLocalCount: mergeResult.conflict.onlyLocal.length,
-                onlyCloudCount: mergeResult.conflict.onlyCloud.length,
-                commonCount: mergeResult.conflict.common.length,
-                onlyCloud: mergeResult.conflict.onlyCloud
-              });
-              break;
-            default: break;
-          }
-
-          // 重新加载数据
-          const visits = await getVisits();
-          setVisitedShrines(visits);
-        }
-      });
-    };
-
-    initAuth();
-
-    return () => {
-      isMounted = false;
-      if (authUnsubscribe) {
-        authUnsubscribe();
-      }
-    };
-  }, []);
-
-  // 加载参拜记录 - 在用户状态变化时重新加载
-  useEffect(() => {
-    const loadVisits = async () => {
-      // 还在加载认证状态时等待
-      if (authLoading) {
-        return;
-      }
-
-      // 无论登录与否都加载记录（未登录用 localStorage，已登录用 API）
-      try {
-        const visits = await getVisits();
-        setVisitedShrines(visits);
-      } catch {
-        // ignore load errors
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadVisits();
-  }, [user, authLoading]);
 
   // 关闭弹窗（保持当前地图位置）
   const closeSelectedShrine = useCallback(() => {
@@ -343,9 +258,10 @@ const ShrineMapApp = () => {
 
     return () => {
       if (map.current) {
+        // M2: Do NOT call setMapLoaded(false) here — component is unmounting,
+        // calling setState after unmount causes React 18 strict-mode warnings.
         map.current.remove();
         map.current = null;
-        setMapLoaded(false);
       }
     };
   }, [loading, shrines, closeSelectedShrine]); // 移除 visitedShrines 依赖
@@ -362,18 +278,18 @@ const ShrineMapApp = () => {
 
   // 当UI布局变化（如关闭登录提示）时，调整地图大小
   useEffect(() => {
-    if (map.current) {
-      // 给予少量延迟以确保 DOM 布局已更新
-      setTimeout(() => {
-        map.current.resize();
-      }, 100);
-    }
+    if (!map.current) return;
+    // 给予少量延迟以确保 DOM 布局已更新
+    const resizeTimer = setTimeout(() => {
+      if (map.current) map.current.resize();
+    }, 100);
+    return () => clearTimeout(resizeTimer);
   }, [showLoginPrompt, viewMode]);
 
   // 切换参拜状态（乐观更新：先更新 UI，再写入本地/同步云端）
   const toggleVisited = useCallback(async (shrineId) => {
     // 使用函数式更新避免 Race Condition
-    setVisitedShrines(prev => {
+    updateVisitedShrines(prev => {
       const newVisited = new Set(prev);
       if (newVisited.has(shrineId)) {
         newVisited.delete(shrineId);
@@ -383,23 +299,23 @@ const ShrineMapApp = () => {
 
       // 后台写入本地存储并同步云端（不阻塞 UI）
       toggleVisitOptimistic(shrineId, prev).catch(() => {
+        if (!isMounted.current) return;
         // 显示错误提示
         if (!navigator.onLine) {
           setSyncError('オフラインです。オンラインになったら自動的に同期されます。');
         } else {
           setSyncError('同期に失敗しました。後で再試行されます。');
         }
-        // 3秒后清除错误提示
-        setTimeout(() => setSyncError(null), 3000);
+        scheduleErrorClear(3000);
       });
 
       return newVisited;
     });
-  }, []);
+  }, [scheduleErrorClear, updateVisitedShrines]);
 
   // 点击列表项时移动地图
-  const focusOnShrine = (shrine) => {
-    // 保存当前视图状态
+  const focusOnShrine = useCallback((shrine) => {
+    setViewMode('map');
     if (map.current) {
       previousView.current = {
         center: map.current.getCenter(),
@@ -410,17 +326,34 @@ const ShrineMapApp = () => {
         zoom: 10,
         duration: 1000
       });
+      setSelectedShrine(shrine);
+    } else {
+      // Map not initialized yet: defer flyTo + selection until map loads
+      pendingFocusRef.current = shrine;
     }
-    setSelectedShrine(shrine);
-    setViewMode('map');
-  };
+  }, []);
 
-  // 登录处理（打开 Clerk 登录弹窗）
+  // Execute deferred focus once map becomes ready
+  useEffect(() => {
+    if (!mapLoaded || !map.current || !pendingFocusRef.current) return;
+    const shrine = pendingFocusRef.current;
+    pendingFocusRef.current = null;
+    previousView.current = {
+      center: map.current.getCenter(),
+      zoom: map.current.getZoom()
+    };
+    map.current.flyTo({ center: [shrine.lng, shrine.lat], zoom: 10, duration: 1000 });
+    setSelectedShrine(shrine);
+  }, [mapLoaded]);
+
+  // 登录处理（打开 Google 登录弹窗）
   const handleLogin = async () => {
     try {
-      await loginWithGoogle(); // Opens Clerk sign-in modal
+      await loginWithGoogle();
     } catch {
-      // ignore login errors
+      if (!isMounted.current) return;
+      setSyncError('ログインに失敗しました。もう一度お試しください。');
+      scheduleErrorClear(3000);
     }
   };
 
@@ -432,49 +365,73 @@ const ShrineMapApp = () => {
       await clearLocalStorage();
       await logout();
       // 清空内存中的状态
-      setVisitedShrines(new Set());
+      updateVisitedShrines(new Set());
     } catch {
-      // ignore logout errors
+      if (!isMounted.current) return;
+      setSyncError('ログアウトに失敗しました。もう一度お試しください。');
+      scheduleErrorClear(3000);
     }
   };
 
   // 合并所有数据（本地 + 云端）
   const handleMergeAll = async () => {
-    const result = await mergeAll();
-    setMergeDialog(null);
-    if (result.merged) {
-      setSyncMessage(`${result.count}件の記録を合併しました`);
-      setTimeout(() => setSyncMessage(null), 3000);
-      // 直接使用返回的合并数据，避免 Cosmos DB 一致性延迟
-      setVisitedShrines(result.finalVisits);
-    } else {
-      // 合并失败时，重新从云端获取
-      const visits = await getVisits();
-      setVisitedShrines(visits);
+    try {
+      const result = await mergeAll();
+      if (!isMounted.current) return;
+      clearMergeDialog();
+      if (result.merged) {
+        showSyncMessage(`${result.count}件の記録を合併しました`, 3000);
+        // 直接使用返回的合并数据，避免 Cosmos DB 一致性延迟
+        updateVisitedShrines(result.finalVisits);
+      } else {
+        // 合并失败时，重新从云端获取
+        const visits = await getVisits();
+        if (isMounted.current) updateVisitedShrines(visits);
+      }
+    } catch {
+      if (!isMounted.current) return;
+      setSyncError('合併に失敗しました。後で再試行してください。');
+      scheduleErrorClear(3000);
     }
   };
 
   // 使用云端数据（丢弃本地）
   const handleUseCloud = async () => {
-    await clearLocalStorage();
-    setMergeDialog(null);
-    setSyncMessage('クラウドの記録を使用します');
-    setTimeout(() => setSyncMessage(null), 3000);
-    // 重新加载云端数据
-    const visits = await getVisits();
-    setVisitedShrines(visits);
+    try {
+      await clearLocalStorage();
+      if (!isMounted.current) return;
+      clearMergeDialog();
+      showSyncMessage('クラウドの記録を使用します', 3000);
+      // 重新加载云端数据
+      const visits = await getVisits();
+      if (isMounted.current) updateVisitedShrines(visits);
+    } catch {
+      if (!isMounted.current) return;
+      setSyncError('クラウドデータの取得に失敗しました。後で再試行してください。');
+      scheduleErrorClear(3000);
+    }
   };
 
   // 使用本地数据（完全覆盖云端：删除云端独有的，上传本地的）
   const handleUseLocal = async () => {
-    const onlyCloudIds = mergeDialog?.onlyCloud || [];
-    const result = await replaceCloudWithLocal(onlyCloudIds);
-    setMergeDialog(null);
-    if (result.replaced) {
-      setSyncMessage(`ローカルを優先しました（${result.deleted}件削除、${result.uploaded}件アップロード）`);
-      setTimeout(() => setSyncMessage(null), 3000);
-      // 直接使用返回的本地数据，避免 Cosmos DB 一致性延迟
-      setVisitedShrines(result.finalVisits);
+    try {
+      const onlyCloudIds = mergeDialog?.onlyCloud || [];
+      const result = await replaceCloudWithLocal(onlyCloudIds);
+      if (!isMounted.current) return;
+      clearMergeDialog();
+      if (result.replaced) {
+        showSyncMessage(`ローカルを優先しました（${result.deleted}件削除、${result.uploaded}件アップロード）`, 3000);
+        // 直接使用返回的本地数据，避免 Cosmos DB 一致性延迟
+        updateVisitedShrines(result.finalVisits);
+      } else {
+        // replaced=false: reload from server to keep UI consistent
+        const visits = await getVisits();
+        if (isMounted.current) updateVisitedShrines(visits);
+      }
+    } catch {
+      if (!isMounted.current) return;
+      setSyncError('ローカルデータの同期に失敗しました。後で再試行してください。');
+      scheduleErrorClear(3000);
     }
   };
 
@@ -593,7 +550,7 @@ const ShrineMapApp = () => {
           <div className="absolute top-2 right-2 bg-white/80 backdrop-blur-sm rounded-lg shadow-sm px-2 py-1.5 text-xs z-10 flex items-center gap-3">
             <div className="flex items-center gap-1">
               <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
-              <span className="text-gray-600">未参拝</span>
+              <span className="text-gray-600">未参拜</span>
             </div>
             <div className="flex items-center gap-1">
               <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>

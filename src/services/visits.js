@@ -44,7 +44,7 @@ const buildFetchOptions = (method = 'GET', token = null) => {
     }
   };
 
-  if (token && token !== 'mock-token') {
+  if (token) {
     options.headers = buildAuthHeaders(token);
   }
 
@@ -81,15 +81,8 @@ export const getVisits = async () => {
   const token = await getAccessToken();
 
   // Not logged in: use IndexedDB
-  if (!token || token === 'mock-token') {
-    // mock-token indicates dev mode without real auth
-    if (token === 'mock-token' && isDev && !authEnabled) {
-      return await getFromLocal();
-    }
-    // Actually not logged in
-    if (!token) {
-      return await getFromLocal();
-    }
+  if (!token) {
+    return await getFromLocal();
   }
 
   // Logged in: call API
@@ -128,12 +121,6 @@ export const addVisit = async (shrineId) => {
     return await getFromLocal();
   }
 
-  // Dev mode mock token also uses local storage
-  if (token === 'mock-token' && isDev && !authEnabled) {
-    await addVisitToDB(shrineId);
-    return await getFromLocal();
-  }
-
   // Logged in: call API
   try {
     const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST', token));
@@ -160,12 +147,6 @@ export const removeVisit = async (shrineId) => {
 
   // Not logged in: delete from IndexedDB
   if (!token) {
-    await removeVisitFromDB(shrineId);
-    return await getFromLocal();
-  }
-
-  // Dev mode mock token also uses local storage
-  if (token === 'mock-token' && isDev && !authEnabled) {
     await removeVisitFromDB(shrineId);
     return await getFromLocal();
   }
@@ -207,7 +188,7 @@ export const toggleVisit = async (shrineId, currentVisits) => {
  */
 export const mergeLocalToCloud = async () => {
   const token = await getAccessToken();
-  if (!token || token === 'mock-token') {
+  if (!token) {
     return { merged: false, count: 0 };
   }
 
@@ -271,7 +252,7 @@ export const clearLocalStorage = async () => {
  */
 export const smartMerge = async () => {
   const token = await getAccessToken();
-  if (!token || token === 'mock-token') {
+  if (!token) {
     return { action: 'skip', reason: 'not_logged_in' };
   }
 
@@ -365,7 +346,7 @@ export const smartMerge = async () => {
  */
 export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
   const token = await getAccessToken();
-  if (!token || token === 'mock-token') {
+  if (!token) {
     return { replaced: false, uploaded: 0, deleted: 0, finalVisits: new Set() };
   }
 
@@ -416,7 +397,7 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
  */
 export const mergeAll = async () => {
   const token = await getAccessToken();
-  if (!token || token === 'mock-token') {
+  if (!token) {
     return { merged: false, count: 0, finalVisits: new Set() };
   }
 
@@ -561,7 +542,7 @@ export const syncPendingOperations = async () => {
 
   try {
     const token = await getAccessToken();
-    if (!token || token === 'mock-token') {
+    if (!token) {
       return;
     }
 
