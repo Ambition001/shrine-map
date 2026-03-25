@@ -77,7 +77,7 @@ export default function ShrineListView({ regionStats, visitedShrines, onToggleVi
                   const isCollapsed = collapsedPrefectures.has(`${region}-${prefecture}`);
 
                   return (
-                    <div key={prefecture}>
+                    <div key={`${region}-${prefecture}`}>
                       {/* Prefecture header */}
                       <div
                         className="flex items-center gap-1 text-sm font-semibold text-gray-700 mb-2 pl-1 border-l-2 border-red-400 cursor-pointer hover:text-gray-900"

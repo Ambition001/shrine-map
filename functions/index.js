@@ -53,7 +53,7 @@ async function verifyFirebaseToken(req) {
   }
 
   // Development mode mock token
-  if (token === 'mock-token') {
+  if (process.env.NODE_ENV !== 'production' && token === 'mock-token') {
     return { userId: 'dev-user-123' };
   }
 

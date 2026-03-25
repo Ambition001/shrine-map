@@ -122,6 +122,7 @@ export function useAuth() {
     setSyncMessage(text);
     const timerId = setTimeout(() => {
       if (isMountedRef.current) setSyncMessage(null);
+      timerIdsRef.current = timerIdsRef.current.filter(id => id !== timerId);
     }, duration);
     timerIdsRef.current.push(timerId);
   }, []);

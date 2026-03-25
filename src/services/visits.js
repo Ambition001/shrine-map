@@ -100,7 +100,7 @@ export const getVisits = async () => {
     }
 
     const data = await response.json();
-    return new Set(data.map(v => v.shrineId));
+    return new Set((data ?? []).map(v => v.shrineId));
   } catch {
     // Fallback to local storage
     return await getFromLocal();
@@ -256,7 +256,7 @@ export const clearLocalStorage = async () => {
  */
 export const smartMerge = async () => {
   const token = await getAccessToken();
-  if (!token) {
+  if (!token || token === 'mock-token') {
     return { action: 'skip', reason: 'not_logged_in' };
   }
 
@@ -291,7 +291,7 @@ export const smartMerge = async () => {
     }
 
     const data = await response.json();
-    cloudVisits = new Set(data.map(v => v.shrineId));
+    cloudVisits = new Set((data ?? []).map(v => v.shrineId));
   } catch {
     return { action: 'use_local', reason: 'cloud_error' };
   }
@@ -350,7 +350,7 @@ export const smartMerge = async () => {
  */
 export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
   const token = await getAccessToken();
-  if (!token) {
+  if (!token || token === 'mock-token') {
     return { replaced: false, uploaded: 0, deleted: 0, finalVisits: new Set() };
   }
 
@@ -409,7 +409,7 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
  */
 export const mergeAll = async () => {
   const token = await getAccessToken();
-  if (!token) {
+  if (!token || token === 'mock-token') {
     return { merged: false, count: 0, finalVisits: new Set() };
   }
 
@@ -423,7 +423,7 @@ export const mergeAll = async () => {
       throw new Error(`API error: ${response.status}`);
     }
     const data = await response.json();
-    cloudVisits = new Set(data.map(v => v.shrineId));
+    cloudVisits = new Set((data ?? []).map(v => v.shrineId));
   } catch {
     return { merged: false, count: 0, finalVisits: new Set() };
   }
@@ -557,7 +557,7 @@ export const syncPendingOperations = async () => {
 
   try {
     const token = await getAccessToken();
-    if (!token) {
+    if (!token || token === 'mock-token') {
       return;
     }
 

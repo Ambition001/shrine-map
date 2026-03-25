@@ -220,6 +220,7 @@ const ShrineMapApp = () => {
 
     // 点击事件处理函数
     const handleShrineClick = (e) => {
+      if (!e.features?.length) return;
       const feature = e.features[0];
       const shrine = shrines.find(s => s.id === feature.properties.id);
       if (!shrine) return;
