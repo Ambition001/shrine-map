@@ -73,7 +73,7 @@ async function getVisits(userId, endpoint, key) {
 
   const { resources } = await db.items
     .query({
-      query: 'SELECT * FROM c WHERE c.userId = @userId',
+      query: 'SELECT c.shrineId FROM c WHERE c.userId = @userId',
       parameters: [{ name: '@userId', value: userId }]
     })
     .fetchAll();

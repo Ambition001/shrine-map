@@ -62,6 +62,12 @@ export const initLocalStorage = async () => {
 };
 
 /**
+ * Get visit records from local storage (public, for pre-auth prefetch)
+ * @returns {Promise<Set<number>>}
+ */
+export const getLocalVisits = () => getFromLocal();
+
+/**
  * Get visit records from local storage
  * @returns {Promise<Set<number>>}
  */

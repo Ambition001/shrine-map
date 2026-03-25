@@ -50,6 +50,7 @@ jest.mock('../services/auth', () => ({
 
 jest.mock('../services/visits', () => ({
   getVisits: jest.fn().mockResolvedValue(new Set()),
+  getLocalVisits: jest.fn().mockResolvedValue(new Set()),
   toggleVisitOptimistic: jest.fn().mockResolvedValue(undefined),
   initLocalStorage: jest.fn().mockResolvedValue(undefined),
   smartMerge: jest.fn().mockResolvedValue({ action: 'identical' }),
@@ -209,8 +210,11 @@ describe('App – with visited shrines', () => {
 
 describe('App – map click interaction', () => {
   // L4: use dynamic shrine data instead of hardcoded id/name
-  test('clicking a shrine marker shows the detail panel', () => {
+  test('clicking a shrine marker shows the detail panel', async () => {
     render(<App />);
+
+    // Flush dynamic mapbox-gl import so the map initializes
+    await act(async () => {});
 
     // 1. map 初始化完成後（loading=false），App 注册了 on('load', cb)。
     //    手動 trigger load: 内部注册 click handlers + setMapLoaded(true)。
@@ -229,8 +233,10 @@ describe('App – map click interaction', () => {
     expect(screen.getByText(firstShrineWithCoords.name)).toBeInTheDocument();
   });
 
-  test('clicking an already-selected shrine closes the detail panel', () => {
+  test('clicking an already-selected shrine closes the detail panel', async () => {
     render(<App />);
+
+    await act(async () => {});
 
     act(() => { mapInstance._triggerLoad(); });
 
@@ -371,8 +377,10 @@ describe('App – HIGH-4: useVisits error surfaced to user via syncError banner'
 });
 
 describe('App – cross-component interaction', () => {
-  test('clicking shrine name in list view switches to map view and opens detail panel', () => {
+  test('clicking shrine name in list view switches to map view and opens detail panel', async () => {
     render(<App />);
+
+    await act(async () => {});
 
     // 1. 切到リスト表示
     fireEvent.click(screen.getByText('リスト表示'));

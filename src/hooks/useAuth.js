@@ -23,13 +23,10 @@ export function useAuth() {
     };
   }, []);
 
-  // 初始化 IndexedDB + 触发后台同步
+  // 初始化 IndexedDB + 触发后台同步（并行启动，互不依赖）
   useEffect(() => {
-    const init = async () => {
-      await initLocalStorage();
-      syncPendingOperations();
-    };
-    init();
+    initLocalStorage().catch(() => {});
+    syncPendingOperations();
   }, []);
 
   // 监听网络恢复，自动重试同步

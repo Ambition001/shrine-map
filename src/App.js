@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
 import { List, Map, LogIn, LogOut, User } from 'lucide-react';
 import shrineData from './data/shrines.json';
 import { toggleVisitOptimistic, mergeAll, clearLocalStorage, replaceCloudWithLocal, getVisits } from './services/visits';
@@ -14,9 +12,6 @@ import ShrineListView from './components/ShrineListView';
 import { useAuth } from './hooks/useAuth';
 import { useVisits } from './hooks/useVisits';
 
-// Mapbox token from environment variable
-mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
-
 const ShrineMapApp = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
@@ -26,6 +21,8 @@ const ShrineMapApp = () => {
   const errorTimersRef = useRef([]); // track error-display timer IDs for cleanup
   const pendingFocusRef = useRef(null); // shrine to focus once map initializes
   const visitsErrorMsg = useRef(null); // tracks the last visits-load error message for selective clearing
+
+  const [mapboxgl, setMapboxgl] = useState(null);
 
   // 过滤有经纬度的神社用于地图显示
   const [shrines] = useState(shrineData.filter(s => s.lat && s.lng));
@@ -52,6 +49,21 @@ const ShrineMapApp = () => {
       isMounted.current = false;
       timers.forEach(clearTimeout);
     };
+  }, []);
+
+  // 动态加载 mapbox-gl，将其从初始 bundle 中拆分
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      import('mapbox-gl'),
+      import('mapbox-gl/dist/mapbox-gl.css'),
+    ]).then(([mod]) => {
+      if (!cancelled) {
+        mod.default.accessToken = process.env.REACT_APP_MAPBOX_TOKEN;
+        setMapboxgl(mod.default);
+      }
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // Schedule a 3-second auto-clear of syncError, tracking the timer for cleanup
@@ -144,7 +156,7 @@ const ShrineMapApp = () => {
 
   // 初始化地图 - 只在 loading 完成后执行一次
   useEffect(() => {
-    if (loading || !mapContainer.current || map.current) return;
+    if (loading || !mapboxgl || !mapContainer.current || map.current) return;
 
     const mapInstance = new mapboxgl.Map({
       container: mapContainer.current,
@@ -274,7 +286,7 @@ const ShrineMapApp = () => {
         map.current = null;
       }
     };
-  }, [loading, shrines, closeSelectedShrine]); // 移除 visitedShrines 依赖
+  }, [loading, mapboxgl, shrines, closeSelectedShrine]); // 移除 visitedShrines 依赖
 
   // 更新神社数据
   useEffect(() => {

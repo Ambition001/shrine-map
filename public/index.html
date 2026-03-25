@@ -25,6 +25,13 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title>一ノ宮マップ</title>
+    <!-- DNS prefetch and preconnect for critical third-party origins -->
+    <link rel="dns-prefetch" href="//api.mapbox.com" />
+    <link rel="dns-prefetch" href="//events.mapbox.com" />
+    <link rel="dns-prefetch" href="//firebaseinstallations.googleapis.com" />
+    <link rel="dns-prefetch" href="//identitytoolkit.googleapis.com" />
+    <link rel="preconnect" href="https://api.mapbox.com" crossorigin />
+    <link rel="preconnect" href="https://firebaseinstallations.googleapis.com" crossorigin />
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
