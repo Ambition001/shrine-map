@@ -7,7 +7,7 @@
           {
             "type": "command",
             "if": "Bash(git push*)",
-            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE '^git push'; then npm run test:e2e:ci || { printf '{\"continue\":false,\"stopReason\":\"E2E CI tests failed — fix failing tests before pushing.\"}'; exit 1; }; fi",
+            "command": "npm run test:e2e:ci || { printf '{\"continue\":false,\"stopReason\":\"E2E CI tests failed — fix failing tests before pushing.\"}'; exit 1; }",
             "timeout": 300,
             "statusMessage": "Running E2E CI tests before push..."
           }
