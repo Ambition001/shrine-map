@@ -35,6 +35,11 @@ module.exports = defineConfig({
       PORT: '3001',
       BROWSER: 'none',   // prevent CRA from trying to open a browser
       CI: 'false',       // CRA sets CI=true which treats warnings as errors; keep permissive
+      // Dummy Firebase config so getAuth() doesn't throw auth/invalid-api-key at module init.
+      // Auth is disabled (REACT_APP_AUTH_ENABLED=false) so no real Firebase calls are made.
+      REACT_APP_FIREBASE_API_KEY: 'dummy-e2e-api-key',
+      REACT_APP_FIREBASE_AUTH_DOMAIN: 'dummy-e2e.firebaseapp.com',
+      REACT_APP_FIREBASE_PROJECT_ID: 'dummy-e2e-project',
     },
   },
 });
