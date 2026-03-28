@@ -57,6 +57,8 @@ const {
   getPendingCount,
   clearLocalStorage,
   initLocalStorage,
+  getLocalVisits,
+  getVisits,
   _resetSyncLockForTesting,
 } = require('../visits');
 
@@ -538,5 +540,60 @@ describe('clearLocalStorage', () => {
     expect(clearAllVisits).toHaveBeenCalledTimes(1);
     expect(clearPendingOperations).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem('visited-shrines')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C-3: Every catch block must call console.error (no silent failures)
+// ---------------------------------------------------------------------------
+
+describe('C-3: catch blocks log errors via console.error', () => {
+  let errorSpy;
+
+  beforeEach(() => {
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  test('getLocalVisits logs when getAllVisits throws', async () => {
+    getAllVisits.mockRejectedValue(new Error('IndexedDB failure'));
+    const result = await getLocalVisits();
+    expect(result).toBeInstanceOf(Set);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  test('getVisits logs when cloud fetch throws', async () => {
+    global.fetch.mockRejectedValue(new Error('Network error'));
+    const result = await getVisits();
+    expect(result).toBeInstanceOf(Set);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  test('smartMerge logs when cloud fetch throws', async () => {
+    getAllVisits.mockResolvedValue(new Set([1, 2]));
+    getPendingOperations.mockResolvedValue([]);
+    global.fetch.mockRejectedValue(new Error('Network error'));
+    const result = await smartMerge();
+    expect(result).toMatchObject({ action: 'use_local', reason: 'cloud_error' });
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  test('mergeAll logs when cloud fetch throws', async () => {
+    getAllVisits.mockResolvedValue(new Set([1]));
+    global.fetch.mockRejectedValue(new Error('Network error'));
+    const result = await mergeAll();
+    expect(result.merged).toBe(false);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  test('replaceCloudWithLocal logs when DELETE fetch throws', async () => {
+    getAllVisits.mockResolvedValue(new Set([10]));
+    global.fetch.mockRejectedValue(new Error('Network error'));
+    const result = await replaceCloudWithLocal([99]);
+    expect(result.replaced).toBe(false);
+    expect(errorSpy).toHaveBeenCalled();
   });
 });

@@ -74,7 +74,8 @@ export const getLocalVisits = () => getFromLocal();
 const getFromLocal = async () => {
   try {
     return await getAllVisits();
-  } catch {
+  } catch (error) {
+    console.error('[visits] getFromLocal failed:', error);
     return new Set();
   }
 };
@@ -107,8 +108,8 @@ export const getVisits = async () => {
 
     const data = await response.json();
     return new Set((data ?? []).map(v => v.shrineId));
-  } catch {
-    // Fallback to local storage
+  } catch (error) {
+    console.error('[visits] getVisits cloud fetch failed, falling back to local:', error);
     return await getFromLocal();
   }
 };
@@ -144,7 +145,8 @@ const mergeLocalToCloud = async () => {
     await clearAllVisits();
     localStorage.removeItem(STORAGE_KEY); // Ensure old localStorage is cleared
     return { merged: true, count: localVisits.size };
-  } catch {
+  } catch (error) {
+    console.error('[visits] mergeLocalToCloud failed:', error);
     return { merged: false, count: 0 };
   }
 };
@@ -214,7 +216,8 @@ export const smartMerge = async () => {
 
     const data = await response.json();
     cloudVisits = new Set((data ?? []).map(v => v.shrineId));
-  } catch {
+  } catch (error) {
+    console.error('[visits] smartMerge cloud fetch failed:', error);
     return { action: 'use_local', reason: 'cloud_error' };
   }
 
@@ -290,7 +293,8 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
       if (deleteResults.some(ok => !ok)) {
         return { replaced: false, uploaded: 0, deleted: 0, finalVisits: new Set() };
       }
-    } catch {
+    } catch (error) {
+      console.error('[visits] replaceCloudWithLocal delete step failed:', error);
       return { replaced: false, uploaded: 0, deleted: 0, finalVisits: new Set() };
     }
   }
@@ -307,7 +311,8 @@ export const replaceCloudWithLocal = async (onlyCloudIds = []) => {
       if (uploadResults.some(ok => !ok)) {
         return { replaced: false, uploaded: 0, deleted: onlyCloudIds.length, finalVisits: new Set() };
       }
-    } catch {
+    } catch (error) {
+      console.error('[visits] replaceCloudWithLocal upload step failed:', error);
       return { replaced: false, uploaded: 0, deleted: onlyCloudIds.length, finalVisits: new Set() };
     }
   }
@@ -346,7 +351,8 @@ export const mergeAll = async () => {
     }
     const data = await response.json();
     cloudVisits = new Set((data ?? []).map(v => v.shrineId));
-  } catch {
+  } catch (error) {
+    console.error('[visits] mergeAll cloud fetch failed:', error);
     return { merged: false, count: 0, finalVisits: new Set() };
   }
 
@@ -372,7 +378,8 @@ export const mergeAll = async () => {
       try {
         const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST', token));
         return { shrineId, success: response.ok };
-      } catch {
+      } catch (error) {
+        console.error('[visits] mergeAll upload failed for shrine', shrineId, error);
         return { shrineId, success: false };
       }
     })
@@ -456,7 +463,8 @@ const doSync = async (token = null) => {
       } else {
         failed++;
       }
-    } catch {
+    } catch (error) {
+      console.error('[visits] doSync failed for op', op, error);
       failed++;
     }
   }

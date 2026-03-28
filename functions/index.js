@@ -194,10 +194,8 @@ exports.visits = onRequest(
         });
       }
 
-      return res.status(500).json({
-        error: 'Server error',
-        message: error.message
-      });
+      console.error('[visits] Unhandled error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
     }
   }
 );
