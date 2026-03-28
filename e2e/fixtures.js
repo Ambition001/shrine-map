@@ -121,17 +121,26 @@ async function getIndexedDBVisits(page) {
  * Wait for the app to finish loading (spinner gone, header visible).
  * Must call suppressMapboxErrors(page) before page.goto() to prevent
  * CRA error overlay from blocking the UI in headless Chromium.
+ *
+ * Uses networkidle to wait for webpack bundle compilation before asserting
+ * on React elements — critical in CI where compilation can take 30–60s.
  */
 async function waitForAppReady(page) {
+  // Wait for webpack to finish serving all JS/CSS chunks.
+  // CRA dev server returns 200 for the HTML immediately, but the JS bundle
+  // is compiled on demand — networkidle waits until all outstanding requests
+  // (including the bundle) have settled.
+  await page.waitForLoadState('networkidle', { timeout: 60000 });
+
   // Wait for loading overlay to disappear if present
   try {
-    await page.waitForSelector('text=読み込み中', { state: 'hidden', timeout: 10000 });
+    await page.waitForSelector('text=読み込み中', { state: 'hidden', timeout: 20000 });
   } catch {
     // Not present, that's fine
   }
 
-  // Wait for the gradient header to appear
-  await page.waitForSelector('.bg-gradient-to-r', { timeout: 15000 });
+  // Wait for the gradient header to appear (rendered when loading=false)
+  await page.waitForSelector('.bg-gradient-to-r', { timeout: 30000 });
 }
 
 /**
