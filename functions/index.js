@@ -52,8 +52,9 @@ async function verifyFirebaseToken(req) {
     return { error: 'Token is empty' };
   }
 
-  // Development mode mock token
-  if (process.env.NODE_ENV !== 'production' && token === 'mock-token') {
+  // Emulator-only mock token — FUNCTIONS_EMULATOR is set exclusively by the
+  // Firebase local emulator and is never present in deployed Cloud Functions.
+  if (process.env.FUNCTIONS_EMULATOR === 'true' && token === 'mock-token') {
     return { userId: 'dev-user-123' };
   }
 
@@ -122,7 +123,7 @@ async function removeVisit(userId, shrineId, endpoint, key) {
 exports.visits = onRequest(
   {
     secrets: [cosmosEndpoint, cosmosKey],
-    cors: true,  // Enable CORS
+    cors: ['https://shrine-map-78d5f.web.app'],  // Restrict CORS to production origin
     maxInstances: 10  // Limit concurrent instances to cap costs
   },
   async (req, res) => {
@@ -160,12 +161,24 @@ exports.visits = onRequest(
           if (!shrineId) {
             return res.status(400).json({ error: 'Missing shrineId' });
           }
+          {
+            const shrineIdNum = parseInt(shrineId, 10);
+            if (shrineIdNum < 1 || shrineIdNum > 105) {
+              return res.status(400).json({ error: 'Invalid shrineId' });
+            }
+          }
           const newVisit = await addVisit(userId, shrineId, endpoint, key);
           return res.status(201).json(newVisit);
 
         case 'DELETE':
           if (!shrineId) {
             return res.status(400).json({ error: 'Missing shrineId' });
+          }
+          {
+            const shrineIdNum = parseInt(shrineId, 10);
+            if (shrineIdNum < 1 || shrineIdNum > 105) {
+              return res.status(400).json({ error: 'Invalid shrineId' });
+            }
           }
           const result = await removeVisit(userId, shrineId, endpoint, key);
           return res.status(200).json(result);

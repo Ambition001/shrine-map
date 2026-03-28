@@ -114,85 +114,11 @@ export const getVisits = async () => {
 };
 
 /**
- * Add a visit record
- * @param {number} shrineId
- * @returns {Promise<Set<number>>}
- */
-export const addVisit = async (shrineId) => {
-  const token = await getAccessToken();
-
-  // Not logged in: save to IndexedDB
-  if (!token) {
-    await addVisitToDB(shrineId);
-    return await getFromLocal();
-  }
-
-  // Logged in: call API
-  try {
-    const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('POST', token));
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return await getVisits();
-  } catch {
-    // Fallback to local storage
-    await addVisitToDB(shrineId);
-    return await getFromLocal();
-  }
-};
-
-/**
- * Remove a visit record
- * @param {number} shrineId
- * @returns {Promise<Set<number>>}
- */
-export const removeVisit = async (shrineId) => {
-  const token = await getAccessToken();
-
-  // Not logged in: delete from IndexedDB
-  if (!token) {
-    await removeVisitFromDB(shrineId);
-    return await getFromLocal();
-  }
-
-  // Logged in: call API
-  try {
-    const response = await fetch(`${API_URL}/visits/${shrineId}`, buildFetchOptions('DELETE', token));
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return await getVisits();
-  } catch {
-    // Fallback to local storage
-    await removeVisitFromDB(shrineId);
-    return await getFromLocal();
-  }
-};
-
-/**
- * Toggle visit status
- * @param {number} shrineId
- * @param {Set<number>} currentVisits
- * @returns {Promise<Set<number>>}
- */
-export const toggleVisit = async (shrineId, currentVisits) => {
-  if (currentVisits.has(shrineId)) {
-    return removeVisit(shrineId);
-  } else {
-    return addVisit(shrineId);
-  }
-};
-
-/**
  * Merge local data to cloud
  * Called after login to sync local records to DB
  * @returns {Promise<{merged: boolean, count: number}>}
  */
-export const mergeLocalToCloud = async () => {
+const mergeLocalToCloud = async () => {
   const token = await getAccessToken();
   if (!token) {
     return { merged: false, count: 0 };
@@ -221,16 +147,6 @@ export const mergeLocalToCloud = async () => {
   } catch {
     return { merged: false, count: 0 };
   }
-};
-
-/**
- * Get count of locally stored visit records
- * Used for UI display
- * @returns {Promise<number>}
- */
-export const getLocalVisitsCount = async () => {
-  const visits = await getFromLocal();
-  return visits.size;
 };
 
 /**
@@ -480,6 +396,7 @@ export const mergeAll = async () => {
 
 // Sync lock to prevent concurrent syncing
 let isSyncing = false;
+export const _resetSyncLockForTesting = () => { isSyncing = false; };
 
 /**
  * Smart add pending operation (dedup/merge)

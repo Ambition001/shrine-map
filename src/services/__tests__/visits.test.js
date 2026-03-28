@@ -57,6 +57,7 @@ const {
   getPendingCount,
   clearLocalStorage,
   initLocalStorage,
+  _resetSyncLockForTesting,
 } = require('../visits');
 
 // ---------------------------------------------------------------------------
@@ -84,6 +85,7 @@ const setupHappyPath = () => {
 beforeEach(() => {
   jest.clearAllMocks();
   setupHappyPath();
+  _resetSyncLockForTesting();
   global.fetch = jest.fn();
   Object.defineProperty(navigator, 'onLine', {
     value: true,

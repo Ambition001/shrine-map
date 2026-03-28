@@ -20,6 +20,9 @@ let mockContainer;   // configurable Cosmos DB container mock
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  // Simulate the local emulator environment so mock-token is accepted by default
+  process.env.FUNCTIONS_EMULATOR = 'true';
+
   jest.resetModules();
 
   // Build a fresh Cosmos container mock that tests can override
@@ -64,6 +67,10 @@ beforeEach(() => {
   handler = require('../index').visits;
 });
 
+afterEach(() => {
+  delete process.env.FUNCTIONS_EMULATOR;
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -101,11 +108,66 @@ describe('auth middleware', () => {
     expect(r.status).toHaveBeenCalledWith(401);
   });
 
-  test('accepts mock-token without calling verifyIdToken (dev mode)', async () => {
+  test('accepts mock-token without calling verifyIdToken when FUNCTIONS_EMULATOR=true', async () => {
+    process.env.FUNCTIONS_EMULATOR = 'true';
     const r = res();
     await handler(req({ headers: { authorization: 'Bearer mock-token' } }), r);
     expect(mockAdmin.auth).not.toHaveBeenCalled();
     expect(r.status).toHaveBeenCalledWith(200);
+    delete process.env.FUNCTIONS_EMULATOR;
+  });
+
+  test('returns dev-user-123 userId when FUNCTIONS_EMULATOR=true and token is mock-token', async () => {
+    process.env.FUNCTIONS_EMULATOR = 'true';
+    // Use GET so we reach the userId-dependent Cosmos query and can verify the userId
+    const r = res();
+    await handler(req({ method: 'GET', path: '/visits', headers: { authorization: 'Bearer mock-token' } }), r);
+    expect(r.status).toHaveBeenCalledWith(200);
+    // The Cosmos query must have been called with dev-user-123
+    expect(mockContainer.items.query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parameters: expect.arrayContaining([
+          expect.objectContaining({ name: '@userId', value: 'dev-user-123' }),
+        ]),
+      })
+    );
+    delete process.env.FUNCTIONS_EMULATOR;
+  });
+
+  test('rejects mock-token with 401 when FUNCTIONS_EMULATOR is not set', async () => {
+    // Ensure FUNCTIONS_EMULATOR is unset for this test
+    delete process.env.FUNCTIONS_EMULATOR;
+    // firebase-admin verifyIdToken will throw (mock-token is not a real JWT)
+    mockAdmin.auth.mockReturnValue({
+      verifyIdToken: jest.fn().mockRejectedValue(new Error('Invalid token')),
+    });
+    const r = res();
+    await handler(req({ headers: { authorization: 'Bearer mock-token' } }), r);
+    expect(r.status).toHaveBeenCalledWith(401);
+  });
+
+  test('rejects mock-token with 401 when FUNCTIONS_EMULATOR is set to false', async () => {
+    process.env.FUNCTIONS_EMULATOR = 'false';
+    mockAdmin.auth.mockReturnValue({
+      verifyIdToken: jest.fn().mockRejectedValue(new Error('Invalid token')),
+    });
+    const r = res();
+    await handler(req({ headers: { authorization: 'Bearer mock-token' } }), r);
+    expect(r.status).toHaveBeenCalledWith(401);
+    delete process.env.FUNCTIONS_EMULATOR;
+  });
+
+  test('does not trigger mock bypass for non-mock tokens even when FUNCTIONS_EMULATOR=true', async () => {
+    process.env.FUNCTIONS_EMULATOR = 'true';
+    mockAdmin.auth.mockReturnValue({
+      verifyIdToken: jest.fn().mockResolvedValue({ uid: 'real-user-xyz' }),
+    });
+    const r = res();
+    await handler(req({ headers: { authorization: 'Bearer real.jwt.token' } }), r);
+    // verifyIdToken must be called — the bypass must not have fired
+    expect(mockAdmin.auth).toHaveBeenCalled();
+    expect(r.status).toHaveBeenCalledWith(200);
+    delete process.env.FUNCTIONS_EMULATOR;
   });
 
   test('accepts a real token verified by firebase-admin', async () => {
@@ -326,6 +388,48 @@ describe('Cosmos DB configuration', () => {
     const r = res();
     await freshHandler(req({ headers: { authorization: 'Bearer mock-token' } }), r);
     expect(r.status).toHaveBeenCalledWith(503);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shrineId bounds validation (M2)
+// ---------------------------------------------------------------------------
+
+describe('shrineId bounds validation', () => {
+  test('POST /visits/0 returns 400', async () => {
+    const r = res();
+    await handler(req({ method: 'POST', path: '/visits/0' }), r);
+    expect(r.status).toHaveBeenCalledWith(400);
+  });
+
+  test('POST /visits/106 returns 400', async () => {
+    const r = res();
+    await handler(req({ method: 'POST', path: '/visits/106' }), r);
+    expect(r.status).toHaveBeenCalledWith(400);
+  });
+
+  test('POST /visits/1 returns 201 (valid lower boundary)', async () => {
+    const r = res();
+    await handler(req({ method: 'POST', path: '/visits/1' }), r);
+    expect(r.status).toHaveBeenCalledWith(201);
+  });
+
+  test('POST /visits/105 returns 201 (valid upper boundary)', async () => {
+    const r = res();
+    await handler(req({ method: 'POST', path: '/visits/105' }), r);
+    expect(r.status).toHaveBeenCalledWith(201);
+  });
+
+  test('DELETE /visits/0 returns 400', async () => {
+    const r = res();
+    await handler(req({ method: 'DELETE', path: '/visits/0' }), r);
+    expect(r.status).toHaveBeenCalledWith(400);
+  });
+
+  test('DELETE /visits/106 returns 400', async () => {
+    const r = res();
+    await handler(req({ method: 'DELETE', path: '/visits/106' }), r);
+    expect(r.status).toHaveBeenCalledWith(400);
   });
 });
 

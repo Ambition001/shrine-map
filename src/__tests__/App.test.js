@@ -198,10 +198,11 @@ describe('App – loaded state (with user)', () => {
 
 describe('App – with visited shrines', () => {
   test('stats reflect visited count', () => {
-    // Use a small known set to verify percentage changes
+    // Use real shrine IDs so computeStats counts them correctly
+    const [s1, s2] = shrinesJson;
     useVisits.mockReturnValue({
       ...defaultVisits,
-      visitedShrines: new Set(['shrine-1', 'shrine-2']),
+      visitedShrines: new Set([s1.id, s2.id]),
     });
     render(<App />);
     expect(screen.getByText(/参拝済: 2社/)).toBeInTheDocument();

@@ -102,35 +102,17 @@ describe('useAuth – sync message on new login', () => {
     expect(result.current.syncMessage).toBeNull();
   });
 
-  test('shows sync message when action=partial_sync', async () => {
+  test('shows sync message クラウドに接続できませんでした when action=use_local', async () => {
     setupNewLogin(MOCK_USER);
     visitsService.smartMerge.mockResolvedValue({
-      action: 'partial_sync',
-      count: 2,
-      failed: 1,
+      action: 'use_local',
+      reason: 'cloud_error',
     });
 
     const { result } = renderHook(() => useAuth());
 
     await waitFor(() => {
-      expect(result.current.syncMessage).toContain('2件');
-    });
-  });
-
-  // L1: partial_sync message must use Japanese 失敗 (not Simplified Chinese 失败)
-  test('partial_sync message uses Japanese 失敗 not Simplified Chinese 失败', async () => {
-    setupNewLogin(MOCK_USER);
-    visitsService.smartMerge.mockResolvedValue({
-      action: 'partial_sync',
-      count: 2,
-      failed: 1,
-    });
-
-    const { result } = renderHook(() => useAuth());
-
-    await waitFor(() => {
-      expect(result.current.syncMessage).toContain('失敗');
-      expect(result.current.syncMessage).not.toContain('失败');
+      expect(result.current.syncMessage).toBe('クラウドに接続できませんでした');
     });
   });
 

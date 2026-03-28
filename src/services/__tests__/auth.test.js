@@ -175,32 +175,6 @@ describe('loginWithGoogle', () => {
 });
 
 // ---------------------------------------------------------------------------
-// loginWithTwitter
-// ---------------------------------------------------------------------------
-
-describe('loginWithTwitter', () => {
-  const mockFirebaseUser = {
-    uid: 'tw-uid',
-    displayName: 'Twitter User',
-    email: 'tw@example.com',
-    photoURL: null,
-  };
-
-  test('calls signInWithPopup on desktop', async () => {
-    Object.defineProperty(navigator, 'userAgent', {
-      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-      configurable: true,
-    });
-    firebaseAuth.signInWithPopup.mockResolvedValue({ user: mockFirebaseUser });
-
-    const result = await authService.loginWithTwitter();
-
-    expect(firebaseAuth.signInWithPopup).toHaveBeenCalled();
-    expect(result).toMatchObject({ id: 'tw-uid' });
-  });
-});
-
-// ---------------------------------------------------------------------------
 // getAccessToken
 // ---------------------------------------------------------------------------
 

@@ -32,3 +32,8 @@ api/firebase-admin-key.json
 
 # API local settings (contains secrets)
 api/local.settings.json
+
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+playwright/.cache/

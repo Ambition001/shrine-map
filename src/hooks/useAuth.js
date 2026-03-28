@@ -80,8 +80,8 @@ export function useAuth() {
                 scheduleMessageClear(2000);
               }
               break;
-            case 'partial_sync':
-              setSyncMessage(`${mergeResult.count}件を同期しました（${mergeResult.failed}件失敗）`);
+            case 'use_local':
+              setSyncMessage('クラウドに接続できませんでした');
               scheduleMessageClear(3000);
               break;
             case 'uploaded_local':
@@ -128,5 +128,5 @@ export function useAuth() {
     setMergeDialog(null);
   }, []);
 
-  return { user, authLoading, syncMessage, showSyncMessage, mergeDialog, clearMergeDialog, visitLoadTrigger };
+  return { user, authLoading, syncMessage, showSyncMessage, mergeDialog, setMergeDialog, clearMergeDialog, visitLoadTrigger };
 }

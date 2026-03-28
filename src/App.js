@@ -36,7 +36,7 @@ const ShrineMapApp = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine); // 网络状态
 
   // M1: use narrow interface functions (showSyncMessage, clearMergeDialog) instead of raw setters
-  const { user, authLoading, syncMessage, showSyncMessage, mergeDialog, clearMergeDialog, visitLoadTrigger } = useAuth();
+  const { user, authLoading, syncMessage, showSyncMessage, mergeDialog, setMergeDialog, clearMergeDialog, visitLoadTrigger } = useAuth();
   const { visitedShrines, updateVisitedShrines, loading, error: visitsError } = useVisits(user, authLoading, visitLoadTrigger);
 
   // Track mount state so async callbacks can skip setState after unmount.
@@ -50,6 +50,17 @@ const ShrineMapApp = () => {
       timers.forEach(clearTimeout);
     };
   }, []);
+
+  // Register E2E test helpers on window (non-production only)
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      window.__E2E__ = {
+        triggerMergeDialog: (data) => setMergeDialog(data),
+        getVisitedShrines: () => [...visitedShrines],
+      };
+    }
+    return () => { if (typeof window !== 'undefined') delete window.__E2E__; };
+  }, [setMergeDialog, visitedShrines]);
 
   // 动态加载 mapbox-gl，将其从初始 bundle 中拆分
   useEffect(() => {
@@ -158,13 +169,19 @@ const ShrineMapApp = () => {
   useEffect(() => {
     if (loading || !mapboxgl || !mapContainer.current || map.current) return;
 
-    const mapInstance = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [138.5, 36.5],
-      zoom: 5.5,
-      language: 'ja'
-    });
+    let mapInstance;
+    try {
+      mapInstance = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: [138.5, 36.5],
+        zoom: 5.5,
+        language: 'ja'
+      });
+    } catch (e) {
+      // WebGL unavailable (e.g. headless browser) — skip map init gracefully
+      return;
+    }
 
     mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-left');
 

@@ -12,7 +12,7 @@ import {
   browserLocalPersistence,
   setPersistence
 } from 'firebase/auth';
-import { auth, googleProvider, twitterProvider } from './firebase';
+import { auth, googleProvider } from './firebase';
 
 // Ensure localStorage persistence so state is restored after redirect
 setPersistence(auth, browserLocalPersistence).catch(() => {});
@@ -144,29 +144,6 @@ export const loginWithGoogle = async () => {
 };
 
 /**
- * Twitter/X login
- * Desktop uses popup, mobile uses redirect
- */
-export const loginWithTwitter = async () => {
-  if (isDev && !authEnabled) {
-    return MOCK_USER;
-  }
-
-  if (isMobile()) {
-    await signInWithRedirect(auth, twitterProvider);
-    return null;
-  }
-
-  const result = await signInWithPopup(auth, twitterProvider);
-  return {
-    id: result.user.uid,
-    name: result.user.displayName,
-    email: result.user.email,
-    photoURL: result.user.photoURL
-  };
-};
-
-/**
  * Logout
  * @returns {Promise<void>}
  */
@@ -189,7 +166,7 @@ export const getAccessToken = async () => {
   const user = auth.currentUser;
   if (user) {
     try {
-      const token = await user.getIdToken(true);
+      const token = await user.getIdToken();
 
       // Check token algorithm (HS256 is emulator token, not usable in production).
       // Wrap atob/JSON.parse in its own try/catch to distinguish a decode error

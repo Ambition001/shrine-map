@@ -47,6 +47,7 @@ export default function ShrineListView({ regionStats, visitedShrines, onToggleVi
         const isRegionCollapsed = collapsedRegions.has(region);
 
         return (
+          /* region names come from REGION_ORDER — stable string constants, safe as keys */
           <div key={region}>
             {/* Region header */}
             <div

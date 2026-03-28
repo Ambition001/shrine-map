@@ -260,4 +260,9 @@ describe('computeStats', () => {
     const { percentage } = computeStats([kanto1, kanto2], new Set([1]));
     expect(percentage).toBe(50);
   });
+
+  test('ignores bogus IDs not in the shrine list', () => {
+    const result = computeStats([kanto1, kanto2], new Set([1, 999]));
+    expect(result).toEqual({ total: 2, visited: 1, percentage: 50 });
+  });
 });

@@ -119,7 +119,7 @@ export function computeRegionStats(shrines, visitedSet) {
  */
 export function computeStats(shrines, visitedSet) {
   const total = shrines.length;
-  const visited = visitedSet.size;
+  const visited = shrines.filter(s => visitedSet.has(s.id)).length;
   const percentage = total > 0 ? Math.round((visited / total) * 100) : 0;
   return { total, visited, percentage };
 }
